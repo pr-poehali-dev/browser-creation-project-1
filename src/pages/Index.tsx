@@ -17,7 +17,7 @@ const Index = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isFocused, setIsFocused] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<'account' | 'appearance' | 'history' | 'bookmarks'>('account');
+  const [settingsTab, setSettingsTab] = useState<'account' | 'appearance' | 'history' | 'bookmarks' | 'advanced'>('account');
   const [user, setUser] = useState<User | null>(() => {
     const saved = localStorage.getItem('nikbrowser_user');
     return saved ? JSON.parse(saved) : null;
@@ -95,6 +95,56 @@ const Index = () => {
 
   const removeBookmark = (index: number) => {
     setBookmarks(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const exportSettings = () => {
+    const data = {
+      bookmarks,
+      searchHistory: incognito ? [] : searchHistory,
+      darkMode,
+      user,
+      exportDate: new Date().toISOString(),
+      version: '1.0'
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `nikbrowser-settings-${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const importSettings = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const data = JSON.parse(e.target?.result as string);
+          if (data.bookmarks) setBookmarks(data.bookmarks);
+          if (data.searchHistory && !incognito) setSearchHistory(data.searchHistory);
+          if (typeof data.darkMode === 'boolean') setDarkMode(data.darkMode);
+          if (data.user) setUser(data.user);
+          alert('✅ Настройки успешно импортированы!');
+        } catch (error) {
+          alert('❌ Ошибка при импорте. Проверьте файл.');
+        }
+      };
+      reader.readAsText(file);
+    }
+  };
+
+  const resetAllSettings = () => {
+    if (confirm('Вы уверены? Все настройки, закладки и история будут удалены!')) {
+      localStorage.clear();
+      setUser(null);
+      setDarkMode(false);
+      setBookmarks([]);
+      setSearchHistory([]);
+      setIncognito(false);
+      alert('✅ Все настройки сброшены!');
+    }
   };
 
   const quickLinks = [
@@ -251,7 +301,8 @@ const Index = () => {
                 { id: 'account', label: 'Аккаунт', icon: '👤' },
                 { id: 'appearance', label: 'Внешний вид', icon: '🎨' },
                 { id: 'bookmarks', label: 'Закладки', icon: '⭐' },
-                { id: 'history', label: 'История', icon: '📚' }
+                { id: 'history', label: 'История', icon: '📚' },
+                { id: 'advanced', label: 'Дополнительно', icon: '⚙️' }
               ].map(tab => (
                 <button
                   key={tab.id}
@@ -748,6 +799,197 @@ const Index = () => {
                       ))}
                     </div>
                   )}
+                </div>
+              )}
+
+              {settingsTab === 'advanced' && (
+                <div>
+                  <h3 style={{
+                    fontSize: '16px',
+                    fontWeight: '600',
+                    marginBottom: '16px',
+                    color: darkMode ? 'white' : '#333'
+                  }}>
+                    Импорт и экспорт
+                  </h3>
+
+                  <div style={{
+                    background: darkMode ? '#3a3a4e' : '#f5f5f5',
+                    padding: '20px',
+                    borderRadius: '12px',
+                    marginBottom: '24px'
+                  }}>
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                      marginBottom: '16px'
+                    }}>
+                      <span style={{ fontSize: '32px' }}>📦</span>
+                      <div>
+                        <div style={{
+                          fontWeight: '600',
+                          marginBottom: '4px',
+                          color: darkMode ? 'white' : '#333',
+                          fontSize: '15px'
+                        }}>
+                          Резервное копирование
+                        </div>
+                        <div style={{
+                          fontSize: '13px',
+                          color: darkMode ? '#999' : '#666'
+                        }}>
+                          Сохраните закладки, историю и настройки
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div style={{ display: 'flex', gap: '12px' }}>
+                      <button
+                        onClick={exportSettings}
+                        style={{
+                          flex: 1,
+                          padding: '12px',
+                          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '8px',
+                          fontSize: '14px',
+                          fontWeight: '600',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '8px'
+                        }}
+                      >
+                        <span>📥</span> Экспорт настроек
+                      </button>
+                      
+                      <label style={{
+                        flex: 1,
+                        padding: '12px',
+                        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px'
+                      }}>
+                        <span>📤</span> Импорт настроек
+                        <input
+                          type="file"
+                          accept=".json"
+                          onChange={importSettings}
+                          style={{ display: 'none' }}
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  <h3 style={{
+                    fontSize: '16px',
+                    fontWeight: '600',
+                    marginBottom: '16px',
+                    color: darkMode ? 'white' : '#333'
+                  }}>
+                    О браузере
+                  </h3>
+
+                  <div style={{
+                    background: darkMode ? '#3a3a4e' : '#f5f5f5',
+                    padding: '20px',
+                    borderRadius: '12px',
+                    marginBottom: '24px'
+                  }}>
+                    <div style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '12px',
+                      color: darkMode ? '#ccc' : '#666',
+                      fontSize: '14px'
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>Версия:</span>
+                        <strong style={{ color: darkMode ? 'white' : '#333' }}>1.0.0</strong>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>Закладок:</span>
+                        <strong style={{ color: darkMode ? 'white' : '#333' }}>{bookmarks.length}</strong>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>История:</span>
+                        <strong style={{ color: darkMode ? 'white' : '#333' }}>{incognito ? 'Инкогнито' : `${searchHistory.length} записей`}</strong>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>Тема:</span>
+                        <strong style={{ color: darkMode ? 'white' : '#333' }}>{darkMode ? 'Тёмная' : 'Светлая'}</strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  <h3 style={{
+                    fontSize: '16px',
+                    fontWeight: '600',
+                    marginBottom: '16px',
+                    color: darkMode ? 'white' : '#333'
+                  }}>
+                    Опасная зона
+                  </h3>
+
+                  <div style={{
+                    background: darkMode ? 'rgba(240, 0, 0, 0.1)' : '#FFF3F3',
+                    border: '1px solid #FFCCCC',
+                    padding: '20px',
+                    borderRadius: '12px'
+                  }}>
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                      marginBottom: '16px'
+                    }}>
+                      <span style={{ fontSize: '32px' }}>⚠️</span>
+                      <div>
+                        <div style={{
+                          fontWeight: '600',
+                          marginBottom: '4px',
+                          color: '#D32F2F',
+                          fontSize: '15px'
+                        }}>
+                          Сброс всех настроек
+                        </div>
+                        <div style={{
+                          fontSize: '13px',
+                          color: darkMode ? '#999' : '#666'
+                        }}>
+                          Удалит все данные, закладки и историю
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <button
+                      onClick={resetAllSettings}
+                      style={{
+                        width: '100%',
+                        padding: '12px',
+                        background: 'linear-gradient(135deg, #F00000 0%, #FF4444 100%)',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Сбросить все настройки
+                    </button>
+                  </div>
                 </div>
               )}
 
