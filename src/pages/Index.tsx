@@ -11,7 +11,10 @@ const Index = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isFocused, setIsFocused] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | null>(() => {
+    const saved = localStorage.getItem('nikbrowser_user');
+    return saved ? JSON.parse(saved) : null;
+  });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,12 +29,15 @@ const Index = () => {
       yandex: { name: 'Пользователь Яндекс', email: 'user@yandex.ru', avatar: '👤', provider: 'yandex' as const },
       github: { name: 'GitHub User', email: 'user@github.com', avatar: '👤', provider: 'github' as const }
     };
-    setUser(mockUsers[provider]);
+    const userData = mockUsers[provider];
+    setUser(userData);
+    localStorage.setItem('nikbrowser_user', JSON.stringify(userData));
     setShowSettings(false);
   };
 
   const handleLogout = () => {
     setUser(null);
+    localStorage.removeItem('nikbrowser_user');
   };
 
   const quickLinks = [
@@ -218,6 +224,24 @@ const Index = () => {
               </div>
             ) : (
               <div>
+                <div style={{
+                  background: '#FFF3CD',
+                  border: '1px solid #FFE69C',
+                  borderRadius: '12px',
+                  padding: '12px 16px',
+                  marginBottom: '20px'
+                }}>
+                  <p style={{
+                    margin: 0,
+                    fontSize: '13px',
+                    color: '#856404',
+                    textAlign: 'center',
+                    fontWeight: '500'
+                  }}>
+                    ⚠️ По техническим причинам вход в аккаунты не работает
+                  </p>
+                </div>
+
                 <p style={{
                   color: '#666',
                   marginBottom: '24px',
