@@ -7,11 +7,17 @@ interface User {
   provider: 'google' | 'yandex' | 'github';
 }
 
+interface Bookmark {
+  name: string;
+  url: string;
+  icon: string;
+}
+
 const Index = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isFocused, setIsFocused] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<'account' | 'appearance' | 'history'>('account');
+  const [settingsTab, setSettingsTab] = useState<'account' | 'appearance' | 'history' | 'bookmarks'>('account');
   const [user, setUser] = useState<User | null>(() => {
     const saved = localStorage.getItem('nikbrowser_user');
     return saved ? JSON.parse(saved) : null;
@@ -25,6 +31,11 @@ const Index = () => {
     const saved = localStorage.getItem('nikbrowser_history');
     return saved ? JSON.parse(saved) : [];
   });
+  const [bookmarks, setBookmarks] = useState<Bookmark[]>(() => {
+    const saved = localStorage.getItem('nikbrowser_bookmarks');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [newBookmark, setNewBookmark] = useState({ name: '', url: '', icon: '⭐' });
 
   useEffect(() => {
     localStorage.setItem('nikbrowser_darkmode', darkMode.toString());
@@ -35,6 +46,10 @@ const Index = () => {
       localStorage.setItem('nikbrowser_history', JSON.stringify(searchHistory));
     }
   }, [searchHistory, incognito]);
+
+  useEffect(() => {
+    localStorage.setItem('nikbrowser_bookmarks', JSON.stringify(bookmarks));
+  }, [bookmarks]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -69,6 +84,17 @@ const Index = () => {
 
   const removeHistoryItem = (item: string) => {
     setSearchHistory(prev => prev.filter(h => h !== item));
+  };
+
+  const addBookmark = () => {
+    if (newBookmark.name.trim() && newBookmark.url.trim()) {
+      setBookmarks(prev => [...prev, { ...newBookmark }]);
+      setNewBookmark({ name: '', url: '', icon: '⭐' });
+    }
+  };
+
+  const removeBookmark = (index: number) => {
+    setBookmarks(prev => prev.filter((_, i) => i !== index));
   };
 
   const quickLinks = [
@@ -224,6 +250,7 @@ const Index = () => {
               {[
                 { id: 'account', label: 'Аккаунт', icon: '👤' },
                 { id: 'appearance', label: 'Внешний вид', icon: '🎨' },
+                { id: 'bookmarks', label: 'Закладки', icon: '⭐' },
                 { id: 'history', label: 'История', icon: '📚' }
               ].map(tab => (
                 <button
@@ -505,6 +532,222 @@ const Index = () => {
                       </button>
                     </div>
                   </div>
+                </div>
+              )}
+
+              {settingsTab === 'bookmarks' && (
+                <div>
+                  <h3 style={{
+                    fontSize: '16px',
+                    fontWeight: '600',
+                    marginBottom: '16px',
+                    color: darkMode ? 'white' : '#333'
+                  }}>
+                    Добавить закладку
+                  </h3>
+                  <div style={{
+                    background: darkMode ? '#3a3a4e' : '#f5f5f5',
+                    padding: '20px',
+                    borderRadius: '12px',
+                    marginBottom: '24px'
+                  }}>
+                    <div style={{ marginBottom: '12px' }}>
+                      <label style={{
+                        display: 'block',
+                        marginBottom: '8px',
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        color: darkMode ? 'white' : '#333'
+                      }}>
+                        Название
+                      </label>
+                      <input
+                        type="text"
+                        value={newBookmark.name}
+                        onChange={(e) => setNewBookmark({ ...newBookmark, name: e.target.value })}
+                        placeholder="Мой сайт"
+                        style={{
+                          width: '100%',
+                          padding: '10px 12px',
+                          borderRadius: '8px',
+                          border: `1px solid ${darkMode ? '#4a4a5e' : '#ddd'}`,
+                          background: darkMode ? '#2a2a3e' : 'white',
+                          color: darkMode ? 'white' : '#333',
+                          fontSize: '14px',
+                          outline: 'none'
+                        }}
+                      />
+                    </div>
+                    <div style={{ marginBottom: '12px' }}>
+                      <label style={{
+                        display: 'block',
+                        marginBottom: '8px',
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        color: darkMode ? 'white' : '#333'
+                      }}>
+                        URL адрес
+                      </label>
+                      <input
+                        type="url"
+                        value={newBookmark.url}
+                        onChange={(e) => setNewBookmark({ ...newBookmark, url: e.target.value })}
+                        placeholder="https://example.com"
+                        style={{
+                          width: '100%',
+                          padding: '10px 12px',
+                          borderRadius: '8px',
+                          border: `1px solid ${darkMode ? '#4a4a5e' : '#ddd'}`,
+                          background: darkMode ? '#2a2a3e' : 'white',
+                          color: darkMode ? 'white' : '#333',
+                          fontSize: '14px',
+                          outline: 'none'
+                        }}
+                      />
+                    </div>
+                    <div style={{ marginBottom: '16px' }}>
+                      <label style={{
+                        display: 'block',
+                        marginBottom: '8px',
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        color: darkMode ? 'white' : '#333'
+                      }}>
+                        Иконка (эмодзи)
+                      </label>
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        {['⭐', '🔥', '💼', '🎮', '🎵', '📱', '💻', '🎨', '📚', '⚡'].map(emoji => (
+                          <button
+                            key={emoji}
+                            onClick={() => setNewBookmark({ ...newBookmark, icon: emoji })}
+                            style={{
+                              fontSize: '24px',
+                              padding: '8px',
+                              border: newBookmark.icon === emoji ? '2px solid #F00000' : `1px solid ${darkMode ? '#4a4a5e' : '#ddd'}`,
+                              borderRadius: '8px',
+                              background: darkMode ? '#2a2a3e' : 'white',
+                              cursor: 'pointer',
+                              transition: 'all 0.2s'
+                            }}
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <button
+                      onClick={addBookmark}
+                      style={{
+                        width: '100%',
+                        padding: '12px',
+                        background: 'linear-gradient(135deg, #F00000 0%, #FF4444 100%)',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontSize: '15px',
+                        fontWeight: '600',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Добавить закладку
+                    </button>
+                  </div>
+
+                  <h3 style={{
+                    fontSize: '16px',
+                    fontWeight: '600',
+                    marginBottom: '16px',
+                    color: darkMode ? 'white' : '#333'
+                  }}>
+                    Мои закладки ({bookmarks.length})
+                  </h3>
+
+                  {bookmarks.length === 0 ? (
+                    <div style={{
+                      textAlign: 'center',
+                      padding: '40px 20px',
+                      color: darkMode ? '#999' : '#666'
+                    }}>
+                      <div style={{ fontSize: '48px', marginBottom: '16px' }}>⭐</div>
+                      <p style={{ margin: 0, fontSize: '15px' }}>Закладок пока нет</p>
+                    </div>
+                  ) : (
+                    <div style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px'
+                    }}>
+                      {bookmarks.map((bookmark, index) => (
+                        <div
+                          key={index}
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            padding: '12px 16px',
+                            background: darkMode ? '#3a3a4e' : '#f5f5f5',
+                            borderRadius: '8px'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
+                            <span style={{ fontSize: '24px' }}>{bookmark.icon}</span>
+                            <div style={{ flex: 1 }}>
+                              <div style={{
+                                fontWeight: '600',
+                                marginBottom: '4px',
+                                color: darkMode ? 'white' : '#333',
+                                fontSize: '14px'
+                              }}>
+                                {bookmark.name}
+                              </div>
+                              <div style={{
+                                fontSize: '12px',
+                                color: darkMode ? '#999' : '#666',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap'
+                              }}>
+                                {bookmark.url}
+                              </div>
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <a
+                              href={bookmark.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{
+                                padding: '6px 12px',
+                                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '6px',
+                                fontSize: '12px',
+                                fontWeight: '600',
+                                cursor: 'pointer',
+                                textDecoration: 'none'
+                              }}
+                            >
+                              Открыть
+                            </a>
+                            <button
+                              onClick={() => removeBookmark(index)}
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                color: '#F00000',
+                                cursor: 'pointer',
+                                fontSize: '18px',
+                                padding: '4px'
+                              }}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
