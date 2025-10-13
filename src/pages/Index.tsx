@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 interface User {
   name: string;
@@ -11,14 +11,37 @@ const Index = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isFocused, setIsFocused] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<'account' | 'appearance' | 'history'>('account');
   const [user, setUser] = useState<User | null>(() => {
     const saved = localStorage.getItem('nikbrowser_user');
     return saved ? JSON.parse(saved) : null;
   });
+  const [darkMode, setDarkMode] = useState(() => {
+    const saved = localStorage.getItem('nikbrowser_darkmode');
+    return saved === 'true';
+  });
+  const [incognito, setIncognito] = useState(false);
+  const [searchHistory, setSearchHistory] = useState<string[]>(() => {
+    const saved = localStorage.getItem('nikbrowser_history');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('nikbrowser_darkmode', darkMode.toString());
+  }, [darkMode]);
+
+  useEffect(() => {
+    if (!incognito) {
+      localStorage.setItem('nikbrowser_history', JSON.stringify(searchHistory));
+    }
+  }, [searchHistory, incognito]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (searchQuery.trim()) {
+      if (!incognito && !searchHistory.includes(searchQuery.trim())) {
+        setSearchHistory(prev => [searchQuery.trim(), ...prev].slice(0, 20));
+      }
       window.open(`https://www.google.com/search?q=${encodeURIComponent(searchQuery)}`, '_blank');
     }
   };
@@ -32,12 +55,20 @@ const Index = () => {
     const userData = mockUsers[provider];
     setUser(userData);
     localStorage.setItem('nikbrowser_user', JSON.stringify(userData));
-    setShowSettings(false);
   };
 
   const handleLogout = () => {
     setUser(null);
     localStorage.removeItem('nikbrowser_user');
+  };
+
+  const clearHistory = () => {
+    setSearchHistory([]);
+    localStorage.removeItem('nikbrowser_history');
+  };
+
+  const removeHistoryItem = (item: string) => {
+    setSearchHistory(prev => prev.filter(h => h !== item));
   };
 
   const quickLinks = [
@@ -49,18 +80,47 @@ const Index = () => {
     { name: 'Почта', url: 'https://mail.google.com', color: '#EA4335', icon: '📧' }
   ];
 
+  const bgGradient = darkMode 
+    ? 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)'
+    : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+
+  const textColor = darkMode ? 'white' : 'white';
+  const cardBg = darkMode ? '#2a2a3e' : 'white';
+  const cardTextColor = darkMode ? 'white' : '#333';
+
   return (
     <div style={{
       minHeight: '100vh',
-      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+      background: incognito ? 'linear-gradient(135deg, #2d2d2d 0%, #1a1a1a 100%)' : bgGradient,
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
       justifyContent: 'center',
       padding: '20px',
-      position: 'relative'
+      position: 'relative',
+      transition: 'background 0.3s ease'
     }}>
+      {incognito && (
+        <div style={{
+          position: 'fixed',
+          top: '20px',
+          left: '20px',
+          background: 'rgba(0, 0, 0, 0.8)',
+          color: 'white',
+          padding: '12px 20px',
+          borderRadius: '12px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          fontSize: '14px',
+          fontWeight: '600',
+          zIndex: 1000
+        }}>
+          🕵️ Режим инкогнито активен
+        </div>
+      )}
+
       <button
         onClick={() => setShowSettings(!showSettings)}
         style={{
@@ -111,26 +171,29 @@ const Index = () => {
             top: '50%',
             left: '50%',
             transform: 'translate(-50%, -50%)',
-            background: 'white',
+            background: darkMode ? '#2a2a3e' : 'white',
             borderRadius: '24px',
-            padding: '32px',
+            padding: '0',
             boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
             zIndex: 1002,
-            maxWidth: '480px',
+            maxWidth: '580px',
             width: '90%',
+            maxHeight: '80vh',
+            overflow: 'hidden',
             animation: 'slideIn 0.3s ease'
           }}>
             <div style={{
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
-              marginBottom: '24px'
+              padding: '24px 32px',
+              borderBottom: `1px solid ${darkMode ? '#3a3a4e' : '#e0e0e0'}`
             }}>
               <h2 style={{
                 margin: 0,
                 fontSize: '24px',
                 fontWeight: '700',
-                color: '#333'
+                color: darkMode ? 'white' : '#333'
               }}>
                 Настройки браузера
               </h2>
@@ -143,7 +206,8 @@ const Index = () => {
                   cursor: 'pointer',
                   padding: '4px',
                   opacity: 0.6,
-                  transition: 'opacity 0.2s'
+                  transition: 'opacity 0.2s',
+                  color: darkMode ? 'white' : '#333'
                 }}
                 onMouseOver={(e) => { e.currentTarget.style.opacity = '1'; }}
                 onMouseOut={(e) => { e.currentTarget.style.opacity = '0.6'; }}
@@ -152,221 +216,394 @@ const Index = () => {
               </button>
             </div>
 
-            {user ? (
-              <div>
-                <div style={{
-                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                  borderRadius: '16px',
-                  padding: '24px',
-                  marginBottom: '24px',
-                  textAlign: 'center'
-                }}>
-                  <div style={{
-                    fontSize: '48px',
-                    marginBottom: '12px'
-                  }}>
-                    {user.avatar}
-                  </div>
-                  <h3 style={{
-                    color: 'white',
-                    margin: '0 0 8px 0',
-                    fontSize: '20px',
-                    fontWeight: '600'
-                  }}>
-                    {user.name}
-                  </h3>
-                  <p style={{
-                    color: 'rgba(255, 255, 255, 0.9)',
-                    margin: 0,
-                    fontSize: '14px'
-                  }}>
-                    {user.email}
-                  </p>
-                  <div style={{
-                    marginTop: '12px',
-                    display: 'inline-block',
-                    padding: '6px 16px',
-                    background: 'rgba(255, 255, 255, 0.2)',
-                    borderRadius: '20px',
-                    fontSize: '12px',
-                    color: 'white',
-                    fontWeight: '600'
-                  }}>
-                    {user.provider === 'google' ? 'Google' : user.provider === 'yandex' ? 'Яндекс ID' : 'GitHub'}
-                  </div>
-                </div>
-
+            <div style={{
+              display: 'flex',
+              borderBottom: `1px solid ${darkMode ? '#3a3a4e' : '#e0e0e0'}`,
+              padding: '0 32px'
+            }}>
+              {[
+                { id: 'account', label: 'Аккаунт', icon: '👤' },
+                { id: 'appearance', label: 'Внешний вид', icon: '🎨' },
+                { id: 'history', label: 'История', icon: '📚' }
+              ].map(tab => (
                 <button
-                  onClick={handleLogout}
+                  key={tab.id}
+                  onClick={() => setSettingsTab(tab.id as any)}
                   style={{
-                    width: '100%',
-                    padding: '16px',
-                    background: 'linear-gradient(135deg, #F00000 0%, #FF4444 100%)',
-                    color: 'white',
+                    background: 'none',
                     border: 'none',
-                    borderRadius: '12px',
-                    fontSize: '16px',
-                    fontWeight: '600',
+                    padding: '16px 20px',
                     cursor: 'pointer',
-                    transition: 'all 0.2s ease'
-                  }}
-                  onMouseOver={(e) => {
-                    e.currentTarget.style.transform = 'scale(1.02)';
-                    e.currentTarget.style.boxShadow = '0 8px 24px rgba(240, 0, 0, 0.3)';
-                  }}
-                  onMouseOut={(e) => {
-                    e.currentTarget.style.transform = 'scale(1)';
-                    e.currentTarget.style.boxShadow = 'none';
+                    fontSize: '15px',
+                    fontWeight: '600',
+                    color: settingsTab === tab.id 
+                      ? '#F00000' 
+                      : darkMode ? '#999' : '#666',
+                    borderBottom: settingsTab === tab.id ? '2px solid #F00000' : '2px solid transparent',
+                    transition: 'all 0.2s',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
                   }}
                 >
-                  Выйти из аккаунта
+                  <span>{tab.icon}</span>
+                  {tab.label}
                 </button>
-              </div>
-            ) : (
-              <div>
-                <div style={{
-                  background: '#FFF3CD',
-                  border: '1px solid #FFE69C',
-                  borderRadius: '12px',
-                  padding: '12px 16px',
-                  marginBottom: '20px'
-                }}>
-                  <p style={{
-                    margin: 0,
-                    fontSize: '13px',
-                    color: '#856404',
-                    textAlign: 'center',
-                    fontWeight: '500'
+              ))}
+            </div>
+
+            <div style={{
+              padding: '32px',
+              maxHeight: '400px',
+              overflowY: 'auto'
+            }}>
+              {settingsTab === 'account' && (
+                <div>
+                  {user ? (
+                    <div>
+                      <div style={{
+                        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                        borderRadius: '16px',
+                        padding: '24px',
+                        marginBottom: '24px',
+                        textAlign: 'center'
+                      }}>
+                        <div style={{ fontSize: '48px', marginBottom: '12px' }}>
+                          {user.avatar}
+                        </div>
+                        <h3 style={{
+                          color: 'white',
+                          margin: '0 0 8px 0',
+                          fontSize: '20px',
+                          fontWeight: '600'
+                        }}>
+                          {user.name}
+                        </h3>
+                        <p style={{
+                          color: 'rgba(255, 255, 255, 0.9)',
+                          margin: 0,
+                          fontSize: '14px'
+                        }}>
+                          {user.email}
+                        </p>
+                        <div style={{
+                          marginTop: '12px',
+                          display: 'inline-block',
+                          padding: '6px 16px',
+                          background: 'rgba(255, 255, 255, 0.2)',
+                          borderRadius: '20px',
+                          fontSize: '12px',
+                          color: 'white',
+                          fontWeight: '600'
+                        }}>
+                          {user.provider === 'google' ? 'Google' : user.provider === 'yandex' ? 'Яндекс ID' : 'GitHub'}
+                        </div>
+                      </div>
+                      <button
+                        onClick={handleLogout}
+                        style={{
+                          width: '100%',
+                          padding: '16px',
+                          background: 'linear-gradient(135deg, #F00000 0%, #FF4444 100%)',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '12px',
+                          fontSize: '16px',
+                          fontWeight: '600',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s ease'
+                        }}
+                      >
+                        Выйти из аккаунта
+                      </button>
+                    </div>
+                  ) : (
+                    <div>
+                      <div style={{
+                        background: '#FFF3CD',
+                        border: '1px solid #FFE69C',
+                        borderRadius: '12px',
+                        padding: '12px 16px',
+                        marginBottom: '20px'
+                      }}>
+                        <p style={{
+                          margin: 0,
+                          fontSize: '13px',
+                          color: '#856404',
+                          textAlign: 'center',
+                          fontWeight: '500'
+                        }}>
+                          ⚠️ По техническим причинам вход в аккаунты не работает
+                        </p>
+                      </div>
+                      <p style={{
+                        color: darkMode ? '#ccc' : '#666',
+                        marginBottom: '24px',
+                        fontSize: '15px'
+                      }}>
+                        Войдите в аккаунт, чтобы синхронизировать закладки, историю и настройки между устройствами
+                      </p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        {[
+                          { provider: 'google', label: 'Войти через Google', icon: '🔵' },
+                          { provider: 'yandex', label: 'Войти через Яндекс ID', icon: '🔴' },
+                          { provider: 'github', label: 'Войти через GitHub', icon: '⚫' }
+                        ].map(({ provider, label, icon }) => (
+                          <button
+                            key={provider}
+                            onClick={() => handleLogin(provider as any)}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '12px',
+                              padding: '16px 20px',
+                              background: darkMode ? '#3a3a4e' : 'white',
+                              border: `2px solid ${darkMode ? '#4a4a5e' : '#e0e0e0'}`,
+                              borderRadius: '12px',
+                              fontSize: '16px',
+                              fontWeight: '600',
+                              cursor: 'pointer',
+                              transition: 'all 0.2s ease',
+                              color: darkMode ? 'white' : '#333'
+                            }}
+                          >
+                            <div style={{ fontSize: '24px' }}>{icon}</div>
+                            <span>{label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {settingsTab === 'appearance' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  <div>
+                    <h3 style={{
+                      fontSize: '16px',
+                      fontWeight: '600',
+                      marginBottom: '16px',
+                      color: darkMode ? 'white' : '#333'
+                    }}>
+                      Тема оформления
+                    </h3>
+                    <div style={{
+                      display: 'flex',
+                      gap: '12px',
+                      padding: '16px',
+                      background: darkMode ? '#3a3a4e' : '#f5f5f5',
+                      borderRadius: '12px',
+                      alignItems: 'center',
+                      justifyContent: 'space-between'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <span style={{ fontSize: '24px' }}>{darkMode ? '🌙' : '☀️'}</span>
+                        <div>
+                          <div style={{
+                            fontWeight: '600',
+                            marginBottom: '4px',
+                            color: darkMode ? 'white' : '#333'
+                          }}>
+                            {darkMode ? 'Тёмная тема' : 'Светлая тема'}
+                          </div>
+                          <div style={{
+                            fontSize: '13px',
+                            color: darkMode ? '#999' : '#666'
+                          }}>
+                            {darkMode ? 'Приятно для глаз ночью' : 'Классическая тема'}
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setDarkMode(!darkMode)}
+                        style={{
+                          background: darkMode ? '#667eea' : '#e0e0e0',
+                          width: '52px',
+                          height: '28px',
+                          borderRadius: '14px',
+                          border: 'none',
+                          cursor: 'pointer',
+                          position: 'relative',
+                          transition: 'background 0.3s'
+                        }}
+                      >
+                        <div style={{
+                          width: '24px',
+                          height: '24px',
+                          borderRadius: '50%',
+                          background: 'white',
+                          position: 'absolute',
+                          top: '2px',
+                          left: darkMode ? '26px' : '2px',
+                          transition: 'left 0.3s'
+                        }} />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h3 style={{
+                      fontSize: '16px',
+                      fontWeight: '600',
+                      marginBottom: '16px',
+                      color: darkMode ? 'white' : '#333'
+                    }}>
+                      Режим приватности
+                    </h3>
+                    <div style={{
+                      display: 'flex',
+                      gap: '12px',
+                      padding: '16px',
+                      background: incognito ? 'rgba(0, 0, 0, 0.3)' : (darkMode ? '#3a3a4e' : '#f5f5f5'),
+                      borderRadius: '12px',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      border: incognito ? '2px solid #666' : 'none'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <span style={{ fontSize: '24px' }}>🕵️</span>
+                        <div>
+                          <div style={{
+                            fontWeight: '600',
+                            marginBottom: '4px',
+                            color: darkMode ? 'white' : '#333'
+                          }}>
+                            Режим инкогнито
+                          </div>
+                          <div style={{
+                            fontSize: '13px',
+                            color: darkMode ? '#999' : '#666'
+                          }}>
+                            История не сохраняется
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setIncognito(!incognito)}
+                        style={{
+                          background: incognito ? '#666' : '#e0e0e0',
+                          width: '52px',
+                          height: '28px',
+                          borderRadius: '14px',
+                          border: 'none',
+                          cursor: 'pointer',
+                          position: 'relative',
+                          transition: 'background 0.3s'
+                        }}
+                      >
+                        <div style={{
+                          width: '24px',
+                          height: '24px',
+                          borderRadius: '50%',
+                          background: 'white',
+                          position: 'absolute',
+                          top: '2px',
+                          left: incognito ? '26px' : '2px',
+                          transition: 'left 0.3s'
+                        }} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {settingsTab === 'history' && (
+                <div>
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: '20px'
                   }}>
-                    ⚠️ По техническим причинам вход в аккаунты не работает
-                  </p>
+                    <h3 style={{
+                      fontSize: '16px',
+                      fontWeight: '600',
+                      margin: 0,
+                      color: darkMode ? 'white' : '#333'
+                    }}>
+                      История поиска
+                    </h3>
+                    {searchHistory.length > 0 && (
+                      <button
+                        onClick={clearHistory}
+                        style={{
+                          background: 'linear-gradient(135deg, #F00000 0%, #FF4444 100%)',
+                          color: 'white',
+                          border: 'none',
+                          padding: '8px 16px',
+                          borderRadius: '8px',
+                          fontSize: '13px',
+                          fontWeight: '600',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Очистить всё
+                      </button>
+                    )}
+                  </div>
+
+                  {incognito ? (
+                    <div style={{
+                      textAlign: 'center',
+                      padding: '40px 20px',
+                      color: darkMode ? '#999' : '#666'
+                    }}>
+                      <div style={{ fontSize: '48px', marginBottom: '16px' }}>🕵️</div>
+                      <p style={{ margin: 0, fontSize: '15px' }}>
+                        Режим инкогнито активен.<br />История не сохраняется.
+                      </p>
+                    </div>
+                  ) : searchHistory.length === 0 ? (
+                    <div style={{
+                      textAlign: 'center',
+                      padding: '40px 20px',
+                      color: darkMode ? '#999' : '#666'
+                    }}>
+                      <div style={{ fontSize: '48px', marginBottom: '16px' }}>📭</div>
+                      <p style={{ margin: 0, fontSize: '15px' }}>История поиска пуста</p>
+                    </div>
+                  ) : (
+                    <div style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px'
+                    }}>
+                      {searchHistory.map((item, index) => (
+                        <div
+                          key={index}
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            padding: '12px 16px',
+                            background: darkMode ? '#3a3a4e' : '#f5f5f5',
+                            borderRadius: '8px',
+                            fontSize: '14px',
+                            color: darkMode ? 'white' : '#333'
+                          }}
+                        >
+                          <span style={{ flex: 1 }}>🔍 {item}</span>
+                          <button
+                            onClick={() => removeHistoryItem(item)}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: '#F00000',
+                              cursor: 'pointer',
+                              fontSize: '18px',
+                              padding: '4px'
+                            }}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-
-                <p style={{
-                  color: '#666',
-                  marginBottom: '24px',
-                  fontSize: '15px'
-                }}>
-                  Войдите в аккаунт, чтобы синхронизировать закладки, историю и настройки между устройствами
-                </p>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <button
-                    onClick={() => handleLogin('google')}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '12px',
-                      padding: '16px 20px',
-                      background: 'white',
-                      border: '2px solid #e0e0e0',
-                      borderRadius: '12px',
-                      fontSize: '16px',
-                      fontWeight: '600',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s ease',
-                      color: '#333'
-                    }}
-                    onMouseOver={(e) => {
-                      e.currentTarget.style.borderColor = '#4285F4';
-                      e.currentTarget.style.boxShadow = '0 4px 16px rgba(66, 133, 244, 0.2)';
-                    }}
-                    onMouseOut={(e) => {
-                      e.currentTarget.style.borderColor = '#e0e0e0';
-                      e.currentTarget.style.boxShadow = 'none';
-                    }}
-                  >
-                    <div style={{
-                      fontSize: '24px',
-                      display: 'flex',
-                      alignItems: 'center'
-                    }}>
-                      🔵
-                    </div>
-                    <span>Войти через Google</span>
-                  </button>
-
-                  <button
-                    onClick={() => handleLogin('yandex')}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '12px',
-                      padding: '16px 20px',
-                      background: 'white',
-                      border: '2px solid #e0e0e0',
-                      borderRadius: '12px',
-                      fontSize: '16px',
-                      fontWeight: '600',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s ease',
-                      color: '#333'
-                    }}
-                    onMouseOver={(e) => {
-                      e.currentTarget.style.borderColor = '#FC3F1D';
-                      e.currentTarget.style.boxShadow = '0 4px 16px rgba(252, 63, 29, 0.2)';
-                    }}
-                    onMouseOut={(e) => {
-                      e.currentTarget.style.borderColor = '#e0e0e0';
-                      e.currentTarget.style.boxShadow = 'none';
-                    }}
-                  >
-                    <div style={{
-                      fontSize: '24px',
-                      display: 'flex',
-                      alignItems: 'center'
-                    }}>
-                      🔴
-                    </div>
-                    <span>Войти через Яндекс ID</span>
-                  </button>
-
-                  <button
-                    onClick={() => handleLogin('github')}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '12px',
-                      padding: '16px 20px',
-                      background: 'white',
-                      border: '2px solid #e0e0e0',
-                      borderRadius: '12px',
-                      fontSize: '16px',
-                      fontWeight: '600',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s ease',
-                      color: '#333'
-                    }}
-                    onMouseOver={(e) => {
-                      e.currentTarget.style.borderColor = '#24292e';
-                      e.currentTarget.style.boxShadow = '0 4px 16px rgba(36, 41, 46, 0.2)';
-                    }}
-                    onMouseOut={(e) => {
-                      e.currentTarget.style.borderColor = '#e0e0e0';
-                      e.currentTarget.style.boxShadow = 'none';
-                    }}
-                  >
-                    <div style={{
-                      fontSize: '24px',
-                      display: 'flex',
-                      alignItems: 'center'
-                    }}>
-                      ⚫
-                    </div>
-                    <span>Войти через GitHub</span>
-                  </button>
-                </div>
-
-                <p style={{
-                  marginTop: '20px',
-                  fontSize: '12px',
-                  color: '#999',
-                  textAlign: 'center'
-                }}>
-                  Нажимая "Войти", вы соглашаетесь с условиями использования
-                </p>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </>
       )}
@@ -389,7 +626,9 @@ const Index = () => {
             <div style={{
               width: '56px',
               height: '56px',
-              background: 'linear-gradient(135deg, #F00000 0%, #FF4444 100%)',
+              background: incognito 
+                ? 'linear-gradient(135deg, #666 0%, #333 100%)'
+                : 'linear-gradient(135deg, #F00000 0%, #FF4444 100%)',
               borderRadius: '16px',
               display: 'flex',
               alignItems: 'center',
@@ -397,12 +636,12 @@ const Index = () => {
               fontSize: '28px',
               boxShadow: '0 8px 24px rgba(240, 0, 0, 0.3)'
             }}>
-              🌐
+              {incognito ? '🕵️' : '🌐'}
             </div>
             <h1 style={{
               fontSize: '48px',
               fontWeight: '700',
-              color: 'white',
+              color: textColor,
               margin: 0,
               letterSpacing: '-0.5px'
             }}>
@@ -414,7 +653,7 @@ const Index = () => {
             fontSize: '18px',
             margin: 0
           }}>
-            Быстрый и удобный поиск в интернете
+            {incognito ? 'Режим инкогнито - история не сохраняется' : 'Быстрый и удобный поиск в интернете'}
           </p>
         </div>
 
@@ -424,7 +663,7 @@ const Index = () => {
             width: '100%'
           }}>
             <div style={{
-              background: 'white',
+              background: cardBg,
               borderRadius: '28px',
               boxShadow: isFocused 
                 ? '0 12px 48px rgba(0, 0, 0, 0.2), 0 0 0 4px rgba(240, 0, 0, 0.2)' 
@@ -459,7 +698,8 @@ const Index = () => {
                     padding: '16px 8px',
                     fontSize: '18px',
                     fontFamily: 'inherit',
-                    background: 'transparent'
+                    background: 'transparent',
+                    color: cardTextColor
                   }}
                 />
                 <button
@@ -476,14 +716,6 @@ const Index = () => {
                     transition: 'all 0.2s ease',
                     margin: '4px'
                   }}
-                  onMouseOver={(e) => {
-                    e.currentTarget.style.transform = 'scale(1.05)';
-                    e.currentTarget.style.boxShadow = '0 4px 16px rgba(240, 0, 0, 0.4)';
-                  }}
-                  onMouseOut={(e) => {
-                    e.currentTarget.style.transform = 'scale(1)';
-                    e.currentTarget.style.boxShadow = 'none';
-                  }}
                 >
                   Найти
                 </button>
@@ -494,7 +726,7 @@ const Index = () => {
 
         <div>
           <h3 style={{
-            color: 'white',
+            color: textColor,
             fontSize: '16px',
             fontWeight: '600',
             marginBottom: '20px',
@@ -514,25 +746,17 @@ const Index = () => {
                 target="_blank"
                 rel="noopener noreferrer"
                 style={{
-                  background: 'rgba(255, 255, 255, 0.95)',
+                  background: cardBg,
                   padding: '20px',
                   borderRadius: '16px',
                   textDecoration: 'none',
-                  color: '#333',
+                  color: cardTextColor,
                   transition: 'all 0.3s ease',
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
                   gap: '8px',
                   boxShadow: '0 4px 16px rgba(0, 0, 0, 0.1)'
-                }}
-                onMouseOver={(e) => {
-                  e.currentTarget.style.transform = 'translateY(-4px)';
-                  e.currentTarget.style.boxShadow = '0 8px 24px rgba(0, 0, 0, 0.15)';
-                }}
-                onMouseOut={(e) => {
-                  e.currentTarget.style.transform = 'translateY(0)';
-                  e.currentTarget.style.boxShadow = '0 4px 16px rgba(0, 0, 0, 0.1)';
                 }}
               >
                 <div style={{
