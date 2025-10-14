@@ -1,0 +1,36 @@
+{
+  "tests": [
+    {
+      "name": "Test get downloads without auth",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 401,
+      "expectedBody": {
+        "error": "string"
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Test add download",
+      "method": "POST",
+      "path": "/",
+      "headers": {
+        "X-User-Id": "1"
+      },
+      "body": {
+        "file_name": "test-document.pdf",
+        "file_url": "https://example.com/test.pdf",
+        "file_size": 1024000,
+        "file_type": "application/pdf"
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "success": true,
+        "download": {
+          "file_name": "string"
+        }
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}

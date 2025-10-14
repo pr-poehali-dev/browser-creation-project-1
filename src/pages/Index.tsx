@@ -437,6 +437,44 @@ const Index = () => {
           {darkMode ? '☀️' : '🌙'}
         </button>
 
+        {user && (
+          <>
+            <button
+              onClick={() => navigate('/downloads')}
+              style={{
+                padding: '10px 16px',
+                background: 'rgba(255, 255, 255, 0.3)',
+                border: 'none',
+                borderRadius: '12px',
+                color: 'white',
+                fontSize: '20px',
+                cursor: 'pointer',
+                backdropFilter: 'blur(10px)'
+              }}
+              title="Загрузки"
+            >
+              📥
+            </button>
+
+            <button
+              onClick={() => navigate('/mail')}
+              style={{
+                padding: '10px 16px',
+                background: 'rgba(255, 255, 255, 0.3)',
+                border: 'none',
+                borderRadius: '12px',
+                color: 'white',
+                fontSize: '20px',
+                cursor: 'pointer',
+                backdropFilter: 'blur(10px)'
+              }}
+              title="Почта"
+            >
+              📧
+            </button>
+          </>
+        )}
+
         {user ? (
           <button
             onClick={() => setShowSettings(true)}
