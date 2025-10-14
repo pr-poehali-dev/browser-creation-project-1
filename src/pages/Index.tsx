@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 const AUTH_API = 'https://functions.poehali.dev/44a8cf08-8c5f-4811-a6e2-d90d06b3b81f';
 const SEARCH_HISTORY_API = 'https://functions.poehali.dev/2b513cfe-e8a0-4a7d-afc3-c574697503ca';
@@ -27,6 +28,7 @@ interface SearchHistoryItem {
 }
 
 const Index = () => {
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [isFocused, setIsFocused] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -355,6 +357,28 @@ const Index = () => {
         gap: '12px',
         alignItems: 'center'
       }}>
+        {user && (
+          <button
+            onClick={() => navigate('/mail')}
+            style={{
+              padding: '10px 16px',
+              background: darkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.3)',
+              border: 'none',
+              borderRadius: '12px',
+              color: 'white',
+              fontSize: '14px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              backdropFilter: 'blur(10px)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+          >
+            📧 Почта
+          </button>
+        )}
+
         <button
           onClick={() => setShowHistoryOverlay(true)}
           style={{

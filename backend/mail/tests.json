@@ -1,0 +1,25 @@
+{
+  "tests": [
+    {
+      "name": "OPTIONS request returns CORS headers",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200,
+      "expectedHeaders": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS"
+      }
+    },
+    {
+      "name": "GET without session returns 401",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 401,
+      "expectedBody": {
+        "success": false,
+        "error": "string"
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}
