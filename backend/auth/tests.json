@@ -1,0 +1,59 @@
+{
+  "tests": [
+    {
+      "name": "Test register with email",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "register",
+        "email": "test@example.com",
+        "password": "password123",
+        "display_name": "Test User"
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "success": true,
+        "user": {
+          "email": "string",
+          "nikmail": "string"
+        },
+        "session_token": "string"
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Test register with phone",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "register",
+        "phone": "+79991234567",
+        "password": "password123",
+        "display_name": "Phone User"
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "success": true,
+        "user": {
+          "phone": "string",
+          "nikmail": "string"
+        }
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Test register without credentials",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "register",
+        "password": "password123"
+      },
+      "expectedStatus": 400,
+      "expectedBody": {
+        "error": "string"
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}

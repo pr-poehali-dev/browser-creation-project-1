@@ -1,10 +1,16 @@
 import React, { useState, useEffect } from 'react';
 
+const AUTH_API = 'https://functions.poehali.dev/44a8cf08-8c5f-4811-a6e2-d90d06b3b81f';
+const SEARCH_HISTORY_API = 'https://functions.poehali.dev/2b513cfe-e8a0-4a7d-afc3-c574697503ca';
+
 interface User {
-  name: string;
-  email: string;
-  avatar: string;
-  provider: 'google' | 'yandex' | 'github';
+  id?: number;
+  email?: string;
+  phone?: string;
+  nikmail: string;
+  display_name?: string;
+  avatar_url?: string;
+  created_at?: string;
 }
 
 interface Bookmark {
@@ -13,77 +19,258 @@ interface Bookmark {
   icon: string;
 }
 
+interface SearchHistoryItem {
+  id: number;
+  search_query: string;
+  search_engine: string;
+  created_at: string;
+}
+
 const Index = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isFocused, setIsFocused] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [showHistoryOverlay, setShowHistoryOverlay] = useState(false);
   const [settingsTab, setSettingsTab] = useState<'account' | 'appearance' | 'history' | 'bookmarks' | 'advanced'>('account');
+  
   const [user, setUser] = useState<User | null>(() => {
     const saved = localStorage.getItem('nikbrowser_user');
     return saved ? JSON.parse(saved) : null;
   });
+  
+  const [sessionToken, setSessionToken] = useState<string | null>(() => {
+    return localStorage.getItem('nikbrowser_session');
+  });
+  
   const [darkMode, setDarkMode] = useState(() => {
     const saved = localStorage.getItem('nikbrowser_darkmode');
     return saved === 'true';
   });
+  
   const [incognito, setIncognito] = useState(false);
-  const [searchHistory, setSearchHistory] = useState<string[]>(() => {
-    const saved = localStorage.getItem('nikbrowser_history');
-    return saved ? JSON.parse(saved) : [];
-  });
+  
+  const [searchHistory, setSearchHistory] = useState<SearchHistoryItem[]>([]);
   const [bookmarks, setBookmarks] = useState<Bookmark[]>(() => {
     const saved = localStorage.getItem('nikbrowser_bookmarks');
     return saved ? JSON.parse(saved) : [];
   });
   const [newBookmark, setNewBookmark] = useState({ name: '', url: '', icon: '⭐' });
+  
+  const [authForm, setAuthForm] = useState({
+    email: '',
+    phone: '',
+    password: '',
+    display_name: ''
+  });
+  
+  const [authError, setAuthError] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
+
+  useEffect(() => {
+    if (sessionToken) {
+      verifySession();
+      loadSearchHistory();
+    }
+  }, [sessionToken]);
 
   useEffect(() => {
     localStorage.setItem('nikbrowser_darkmode', darkMode.toString());
   }, [darkMode]);
 
   useEffect(() => {
-    if (!incognito) {
-      localStorage.setItem('nikbrowser_history', JSON.stringify(searchHistory));
-    }
-  }, [searchHistory, incognito]);
-
-  useEffect(() => {
     localStorage.setItem('nikbrowser_bookmarks', JSON.stringify(bookmarks));
   }, [bookmarks]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const verifySession = async () => {
+    try {
+      const response = await fetch(AUTH_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'verify_session',
+          session_token: sessionToken
+        })
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        setUser(data.user);
+        localStorage.setItem('nikbrowser_user', JSON.stringify(data.user));
+      } else {
+        handleLogout();
+      }
+    } catch (error) {
+      console.error('Session verification failed:', error);
+    }
+  };
+
+  const loadSearchHistory = async () => {
+    if (!sessionToken || incognito) return;
+    
+    try {
+      const response = await fetch(`${SEARCH_HISTORY_API}?limit=50`, {
+        method: 'GET',
+        headers: {
+          'X-Session-Token': sessionToken
+        }
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        setSearchHistory(data.history);
+      }
+    } catch (error) {
+      console.error('Failed to load history:', error);
+    }
+  };
+
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    setAuthLoading(true);
+    
+    try {
+      const response = await fetch(AUTH_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'register',
+          email: authForm.email || undefined,
+          phone: authForm.phone || undefined,
+          password: authForm.password,
+          display_name: authForm.display_name
+        })
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        setUser(data.user);
+        setSessionToken(data.session_token);
+        localStorage.setItem('nikbrowser_user', JSON.stringify(data.user));
+        localStorage.setItem('nikbrowser_session', data.session_token);
+        setShowAuthModal(false);
+        setAuthForm({ email: '', phone: '', password: '', display_name: '' });
+      } else {
+        setAuthError(data.error);
+      }
+    } catch (error) {
+      setAuthError('Ошибка подключения к серверу');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    setAuthLoading(true);
+    
+    try {
+      const response = await fetch(AUTH_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'login',
+          login: authForm.email || authForm.phone,
+          password: authForm.password
+        })
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        setUser(data.user);
+        setSessionToken(data.session_token);
+        localStorage.setItem('nikbrowser_user', JSON.stringify(data.user));
+        localStorage.setItem('nikbrowser_session', data.session_token);
+        setShowAuthModal(false);
+        setAuthForm({ email: '', phone: '', password: '', display_name: '' });
+      } else {
+        setAuthError(data.error);
+      }
+    } catch (error) {
+      setAuthError('Ошибка подключения к серверу');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    if (sessionToken) {
+      try {
+        await fetch(AUTH_API, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'logout',
+            session_token: sessionToken
+          })
+        });
+      } catch (error) {
+        console.error('Logout failed:', error);
+      }
+    }
+    
+    setUser(null);
+    setSessionToken(null);
+    setSearchHistory([]);
+    localStorage.removeItem('nikbrowser_user');
+    localStorage.removeItem('nikbrowser_session');
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (searchQuery.trim()) {
-      if (!incognito && !searchHistory.includes(searchQuery.trim())) {
-        setSearchHistory(prev => [searchQuery.trim(), ...prev].slice(0, 20));
+      if (sessionToken && !incognito) {
+        try {
+          await fetch(SEARCH_HISTORY_API, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Session-Token': sessionToken
+            },
+            body: JSON.stringify({
+              action: 'add',
+              search_query: searchQuery.trim(),
+              search_engine: 'google',
+              is_incognito: incognito
+            })
+          });
+          
+          loadSearchHistory();
+        } catch (error) {
+          console.error('Failed to save search:', error);
+        }
       }
+      
       window.open(`https://www.google.com/search?q=${encodeURIComponent(searchQuery)}`, '_blank');
     }
   };
 
-  const handleLogin = (provider: 'google' | 'yandex' | 'github') => {
-    const mockUsers = {
-      google: { name: 'Пользователь Google', email: 'user@gmail.com', avatar: '👤', provider: 'google' as const },
-      yandex: { name: 'Пользователь Яндекс', email: 'user@yandex.ru', avatar: '👤', provider: 'yandex' as const },
-      github: { name: 'GitHub User', email: 'user@github.com', avatar: '👤', provider: 'github' as const }
-    };
-    const userData = mockUsers[provider];
-    setUser(userData);
-    localStorage.setItem('nikbrowser_user', JSON.stringify(userData));
-  };
-
-  const handleLogout = () => {
-    setUser(null);
-    localStorage.removeItem('nikbrowser_user');
-  };
-
-  const clearHistory = () => {
-    setSearchHistory([]);
-    localStorage.removeItem('nikbrowser_history');
-  };
-
-  const removeHistoryItem = (item: string) => {
-    setSearchHistory(prev => prev.filter(h => h !== item));
+  const clearHistory = async () => {
+    if (sessionToken) {
+      try {
+        await fetch(SEARCH_HISTORY_API, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Session-Token': sessionToken
+          },
+          body: JSON.stringify({
+            action: 'clear'
+          })
+        });
+        
+        setSearchHistory([]);
+      } catch (error) {
+        console.error('Failed to clear history:', error);
+      }
+    }
   };
 
   const addBookmark = () => {
@@ -100,7 +287,6 @@ const Index = () => {
   const exportSettings = () => {
     const data = {
       bookmarks,
-      searchHistory: incognito ? [] : searchHistory,
       darkMode,
       user,
       exportDate: new Date().toISOString(),
@@ -123,9 +309,7 @@ const Index = () => {
         try {
           const data = JSON.parse(e.target?.result as string);
           if (data.bookmarks) setBookmarks(data.bookmarks);
-          if (data.searchHistory && !incognito) setSearchHistory(data.searchHistory);
           if (typeof data.darkMode === 'boolean') setDarkMode(data.darkMode);
-          if (data.user) setUser(data.user);
           alert('✅ Настройки успешно импортированы!');
         } catch (error) {
           alert('❌ Ошибка при импорте. Проверьте файл.');
@@ -139,6 +323,7 @@ const Index = () => {
     if (confirm('Вы уверены? Все настройки, закладки и история будут удалены!')) {
       localStorage.clear();
       setUser(null);
+      setSessionToken(null);
       setDarkMode(false);
       setBookmarks([]);
       setSearchHistory([]);
@@ -147,646 +332,1105 @@ const Index = () => {
     }
   };
 
-  const quickLinks = [
-    { name: 'Google', url: 'https://google.com', color: '#4285F4', icon: '🔍' },
-    { name: 'YouTube', url: 'https://youtube.com', color: '#FF0000', icon: '▶️' },
-    { name: 'GitHub', url: 'https://github.com', color: '#24292e', icon: '💻' },
-    { name: 'ВКонтакте', url: 'https://vk.com', color: '#0077FF', icon: '💙' },
-    { name: 'Telegram', url: 'https://web.telegram.org', color: '#0088cc', icon: '✉️' },
-    { name: 'Почта', url: 'https://mail.google.com', color: '#EA4335', icon: '📧' }
-  ];
-
-  const bgGradient = darkMode 
-    ? 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)'
-    : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
-
-  const textColor = darkMode ? 'white' : 'white';
-  const cardBg = darkMode ? '#2a2a3e' : 'white';
-  const cardTextColor = darkMode ? 'white' : '#333';
-
   return (
     <div style={{
       minHeight: '100vh',
-      background: incognito ? 'linear-gradient(135deg, #2d2d2d 0%, #1a1a1a 100%)' : bgGradient,
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+      background: darkMode
+        ? 'linear-gradient(135deg, #1e1e2e 0%, #2d2d44 100%)'
+        : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
       justifyContent: 'center',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
       padding: '20px',
       position: 'relative',
       transition: 'background 0.3s ease'
     }}>
-      {incognito && (
+      <div style={{
+        position: 'absolute',
+        top: '20px',
+        right: '20px',
+        display: 'flex',
+        gap: '12px',
+        alignItems: 'center'
+      }}>
+        <button
+          onClick={() => setShowHistoryOverlay(true)}
+          style={{
+            padding: '10px 16px',
+            background: darkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.3)',
+            border: 'none',
+            borderRadius: '12px',
+            color: 'white',
+            fontSize: '14px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            backdropFilter: 'blur(10px)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}
+        >
+          📚 История
+        </button>
+
+        <button
+          onClick={() => setIncognito(!incognito)}
+          style={{
+            padding: '10px 16px',
+            background: incognito 
+              ? 'linear-gradient(135deg, #434343 0%, #000000 100%)'
+              : darkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.3)',
+            border: 'none',
+            borderRadius: '12px',
+            color: 'white',
+            fontSize: '14px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            backdropFilter: 'blur(10px)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}
+        >
+          🕶️ {incognito ? 'Инкогнито' : 'Обычный'}
+        </button>
+
+        <button
+          onClick={() => setDarkMode(!darkMode)}
+          style={{
+            padding: '10px 16px',
+            background: darkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.3)',
+            border: 'none',
+            borderRadius: '12px',
+            color: 'white',
+            fontSize: '20px',
+            cursor: 'pointer',
+            backdropFilter: 'blur(10px)'
+          }}
+        >
+          {darkMode ? '☀️' : '🌙'}
+        </button>
+
+        {user ? (
+          <button
+            onClick={() => setShowSettings(true)}
+            style={{
+              padding: '10px 16px',
+              background: darkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.3)',
+              border: 'none',
+              borderRadius: '12px',
+              color: 'white',
+              fontSize: '14px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              backdropFilter: 'blur(10px)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+          >
+            <span>👤</span>
+            <span>{user.display_name || user.nikmail}</span>
+          </button>
+        ) : (
+          <button
+            onClick={() => setShowAuthModal(true)}
+            style={{
+              padding: '10px 20px',
+              background: 'rgba(255, 255, 255, 0.95)',
+              border: 'none',
+              borderRadius: '12px',
+              color: '#667eea',
+              fontSize: '14px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              backdropFilter: 'blur(10px)'
+            }}
+          >
+            Войти
+          </button>
+        )}
+      </div>
+
+      <div style={{
+        textAlign: 'center',
+        marginBottom: '48px'
+      }}>
+        <h1 style={{
+          fontSize: '64px',
+          margin: '0 0 16px 0',
+          color: 'white',
+          fontWeight: '700',
+          letterSpacing: '-2px'
+        }}>
+          NikBrowser
+        </h1>
+        <p style={{
+          fontSize: '18px',
+          color: 'rgba(255, 255, 255, 0.9)',
+          margin: 0
+        }}>
+          Ваш персональный браузер
+        </p>
+      </div>
+
+      <form onSubmit={handleSubmit} style={{
+        width: '100%',
+        maxWidth: '700px',
+        marginBottom: '32px'
+      }}>
+        <div style={{
+          position: 'relative',
+          background: 'white',
+          borderRadius: '24px',
+          padding: '8px',
+          boxShadow: isFocused
+            ? '0 20px 60px rgba(0, 0, 0, 0.3)'
+            : '0 10px 40px rgba(0, 0, 0, 0.2)',
+          transition: 'all 0.3s ease'
+        }}>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onFocus={() => setIsFocused(true)}
+            onBlur={() => setIsFocused(false)}
+            placeholder={incognito ? "🕶️ Инкогнито поиск..." : "Поиск в интернете..."}
+            style={{
+              width: '100%',
+              padding: '20px 24px',
+              fontSize: '18px',
+              border: 'none',
+              outline: 'none',
+              borderRadius: '16px',
+              background: 'transparent'
+            }}
+          />
+          <button
+            type="submit"
+            style={{
+              position: 'absolute',
+              right: '16px',
+              top: '50%',
+              transform: 'translateY(-50%)',
+              padding: '12px 28px',
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '12px',
+              fontSize: '16px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease'
+            }}
+          >
+            Искать
+          </button>
+        </div>
+      </form>
+
+      <div style={{
+        display: 'flex',
+        gap: '16px',
+        flexWrap: 'wrap',
+        justifyContent: 'center',
+        maxWidth: '700px'
+      }}>
+        {bookmarks.slice(0, 6).map((bookmark, index) => (
+          <a
+            key={index}
+            href={bookmark.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '12px 20px',
+              background: darkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.3)',
+              backdropFilter: 'blur(10px)',
+              borderRadius: '12px',
+              color: 'white',
+              textDecoration: 'none',
+              fontSize: '15px',
+              fontWeight: '600',
+              transition: 'all 0.2s ease'
+            }}
+          >
+            <span style={{ fontSize: '20px' }}>{bookmark.icon}</span>
+            {bookmark.name}
+          </a>
+        ))}
+      </div>
+
+      {showHistoryOverlay && (
         <div style={{
           position: 'fixed',
-          top: '20px',
-          left: '20px',
-          background: 'rgba(0, 0, 0, 0.8)',
-          color: 'white',
-          padding: '12px 20px',
-          borderRadius: '12px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          fontSize: '14px',
-          fontWeight: '600',
-          zIndex: 1000
-        }}>
-          🕵️ Режим инкогнито активен
-        </div>
-      )}
-
-      <button
-        onClick={() => setShowSettings(!showSettings)}
-        style={{
-          position: 'fixed',
-          top: '20px',
-          right: '20px',
-          background: 'rgba(255, 255, 255, 0.95)',
-          border: 'none',
-          borderRadius: '50%',
-          width: '56px',
-          height: '56px',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.7)',
+          backdropFilter: 'blur(5px)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          cursor: 'pointer',
-          boxShadow: '0 4px 16px rgba(0, 0, 0, 0.15)',
-          fontSize: '24px',
-          transition: 'all 0.3s ease',
-          zIndex: 1000
-        }}
-        onMouseOver={(e) => {
-          e.currentTarget.style.transform = 'scale(1.1) rotate(90deg)';
-        }}
-        onMouseOut={(e) => {
-          e.currentTarget.style.transform = 'scale(1) rotate(0deg)';
-        }}
-      >
-        ⚙️
-      </button>
-
-      {showSettings && (
-        <>
-          <div
-            onClick={() => setShowSettings(false)}
-            style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              background: 'rgba(0, 0, 0, 0.5)',
-              zIndex: 1001,
-              animation: 'fadeIn 0.3s ease'
-            }}
-          />
+          zIndex: 1000,
+          padding: '20px'
+        }} onClick={() => setShowHistoryOverlay(false)}>
           <div style={{
-            position: 'fixed',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            background: darkMode ? '#2a2a3e' : 'white',
+            background: darkMode ? '#2d2d44' : 'white',
             borderRadius: '24px',
-            padding: '0',
-            boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
-            zIndex: 1002,
-            maxWidth: '580px',
-            width: '90%',
+            padding: '32px',
+            width: '100%',
+            maxWidth: '600px',
             maxHeight: '80vh',
-            overflow: 'hidden',
-            animation: 'slideIn 0.3s ease'
-          }}>
+            overflow: 'auto',
+            boxShadow: '0 25px 70px rgba(0, 0, 0, 0.3)'
+          }} onClick={(e) => e.stopPropagation()}>
             <div style={{
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
-              padding: '24px 32px',
-              borderBottom: `1px solid ${darkMode ? '#3a3a4e' : '#e0e0e0'}`
+              marginBottom: '24px'
             }}>
               <h2 style={{
-                margin: 0,
                 fontSize: '24px',
                 fontWeight: '700',
+                margin: 0,
                 color: darkMode ? 'white' : '#333'
               }}>
-                Настройки браузера
+                📚 История поиска
               </h2>
               <button
-                onClick={() => setShowSettings(false)}
+                onClick={() => setShowHistoryOverlay(false)}
                 style={{
                   background: 'none',
                   border: 'none',
-                  fontSize: '24px',
+                  fontSize: '28px',
                   cursor: 'pointer',
-                  padding: '4px',
-                  opacity: 0.6,
-                  transition: 'opacity 0.2s',
-                  color: darkMode ? 'white' : '#333'
+                  color: darkMode ? '#999' : '#666',
+                  padding: '4px'
                 }}
-                onMouseOver={(e) => { e.currentTarget.style.opacity = '1'; }}
-                onMouseOut={(e) => { e.currentTarget.style.opacity = '0.6'; }}
               >
                 ✕
               </button>
             </div>
 
+            {!user ? (
+              <div style={{
+                textAlign: 'center',
+                padding: '40px 20px',
+                color: darkMode ? '#999' : '#666'
+              }}>
+                <div style={{ fontSize: '64px', marginBottom: '16px' }}>🔒</div>
+                <p style={{ margin: '0 0 16px 0', fontSize: '16px' }}>
+                  Войдите, чтобы увидеть историю
+                </p>
+                <button
+                  onClick={() => {
+                    setShowHistoryOverlay(false);
+                    setShowAuthModal(true);
+                  }}
+                  style={{
+                    padding: '12px 24px',
+                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '12px',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Войти
+                </button>
+              </div>
+            ) : searchHistory.length === 0 ? (
+              <div style={{
+                textAlign: 'center',
+                padding: '40px 20px',
+                color: darkMode ? '#999' : '#666'
+              }}>
+                <div style={{ fontSize: '64px', marginBottom: '16px' }}>🔍</div>
+                <p style={{ margin: 0, fontSize: '15px' }}>История пуста</p>
+              </div>
+            ) : (
+              <>
+                <button
+                  onClick={clearHistory}
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    background: darkMode ? '#3a3a4e' : '#f5f5f5',
+                    border: 'none',
+                    borderRadius: '12px',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    color: '#ff4444',
+                    cursor: 'pointer',
+                    marginBottom: '16px'
+                  }}
+                >
+                  Очистить всю историю
+                </button>
+
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px'
+                }}>
+                  {searchHistory.map((item) => (
+                    <div
+                      key={item.id}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: '12px 16px',
+                        background: darkMode ? '#3a3a4e' : '#f5f5f5',
+                        borderRadius: '12px',
+                        cursor: 'pointer'
+                      }}
+                      onClick={() => {
+                        setSearchQuery(item.search_query);
+                        setShowHistoryOverlay(false);
+                      }}
+                    >
+                      <div style={{ flex: 1 }}>
+                        <div style={{
+                          fontWeight: '600',
+                          color: darkMode ? 'white' : '#333',
+                          fontSize: '15px'
+                        }}>
+                          {item.search_query}
+                        </div>
+                        <div style={{
+                          fontSize: '12px',
+                          color: darkMode ? '#999' : '#666',
+                          marginTop: '4px'
+                        }}>
+                          {new Date(item.created_at).toLocaleString('ru-RU')}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {showAuthModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.7)',
+          backdropFilter: 'blur(5px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '20px'
+        }} onClick={() => setShowAuthModal(false)}>
+          <div style={{
+            background: darkMode ? '#2d2d44' : 'white',
+            borderRadius: '24px',
+            padding: '40px',
+            width: '100%',
+            maxWidth: '450px',
+            boxShadow: '0 25px 70px rgba(0, 0, 0, 0.3)'
+          }} onClick={(e) => e.stopPropagation()}>
             <div style={{
               display: 'flex',
-              borderBottom: `1px solid ${darkMode ? '#3a3a4e' : '#e0e0e0'}`,
-              padding: '0 32px'
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '32px'
             }}>
-              {[
-                { id: 'account', label: 'Аккаунт', icon: '👤' },
-                { id: 'appearance', label: 'Внешний вид', icon: '🎨' },
-                { id: 'bookmarks', label: 'Закладки', icon: '⭐' },
-                { id: 'history', label: 'История', icon: '📚' },
-                { id: 'advanced', label: 'Дополнительно', icon: '⚙️' }
-              ].map(tab => (
+              <h2 style={{
+                fontSize: '28px',
+                fontWeight: '700',
+                margin: 0,
+                color: darkMode ? 'white' : '#333'
+              }}>
+                {authMode === 'login' ? 'Вход' : 'Регистрация'}
+              </h2>
+              <button
+                onClick={() => setShowAuthModal(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  fontSize: '28px',
+                  cursor: 'pointer',
+                  color: darkMode ? '#999' : '#666'
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {authError && (
+              <div style={{
+                padding: '12px',
+                background: '#ffebee',
+                border: '1px solid #ffcdd2',
+                borderRadius: '8px',
+                color: '#c62828',
+                marginBottom: '20px',
+                fontSize: '14px'
+              }}>
+                {authError}
+              </div>
+            )}
+
+            <form onSubmit={authMode === 'login' ? handleLogin : handleRegister}>
+              {authMode === 'register' && (
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{
+                    display: 'block',
+                    marginBottom: '8px',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    color: darkMode ? '#ccc' : '#666'
+                  }}>
+                    Имя (необязательно)
+                  </label>
+                  <input
+                    type="text"
+                    value={authForm.display_name}
+                    onChange={(e) => setAuthForm({ ...authForm, display_name: e.target.value })}
+                    placeholder="Ваше имя"
+                    style={{
+                      width: '100%',
+                      padding: '14px',
+                      fontSize: '15px',
+                      border: darkMode ? '1px solid #444' : '1px solid #ddd',
+                      borderRadius: '12px',
+                      background: darkMode ? '#3a3a4e' : '#f9f9f9',
+                      color: darkMode ? 'white' : '#333',
+                      outline: 'none'
+                    }}
+                  />
+                </div>
+              )}
+
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{
+                  display: 'block',
+                  marginBottom: '8px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  color: darkMode ? '#ccc' : '#666'
+                }}>
+                  Email или Телефон
+                </label>
+                <input
+                  type="text"
+                  value={authForm.email || authForm.phone}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    if (value.includes('@')) {
+                      setAuthForm({ ...authForm, email: value, phone: '' });
+                    } else {
+                      setAuthForm({ ...authForm, phone: value, email: '' });
+                    }
+                  }}
+                  placeholder="example@mail.ru или +79991234567"
+                  required
+                  style={{
+                    width: '100%',
+                    padding: '14px',
+                    fontSize: '15px',
+                    border: darkMode ? '1px solid #444' : '1px solid #ddd',
+                    borderRadius: '12px',
+                    background: darkMode ? '#3a3a4e' : '#f9f9f9',
+                    color: darkMode ? 'white' : '#333',
+                    outline: 'none'
+                  }}
+                />
+              </div>
+
+              <div style={{ marginBottom: '24px' }}>
+                <label style={{
+                  display: 'block',
+                  marginBottom: '8px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  color: darkMode ? '#ccc' : '#666'
+                }}>
+                  Пароль
+                </label>
+                <input
+                  type="password"
+                  value={authForm.password}
+                  onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })}
+                  placeholder="Минимум 6 символов"
+                  required
+                  minLength={6}
+                  style={{
+                    width: '100%',
+                    padding: '14px',
+                    fontSize: '15px',
+                    border: darkMode ? '1px solid #444' : '1px solid #ddd',
+                    borderRadius: '12px',
+                    background: darkMode ? '#3a3a4e' : '#f9f9f9',
+                    color: darkMode ? 'white' : '#333',
+                    outline: 'none'
+                  }}
+                />
+              </div>
+
+              {authMode === 'register' && (
+                <div style={{
+                  padding: '12px',
+                  background: darkMode ? 'rgba(103, 126, 234, 0.1)' : '#e3f2fd',
+                  borderRadius: '8px',
+                  fontSize: '13px',
+                  color: darkMode ? '#99aaff' : '#1976d2',
+                  marginBottom: '20px'
+                }}>
+                  📧 После регистрации вы получите почту <strong>@nikmail.ru</strong>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={authLoading}
+                style={{
+                  width: '100%',
+                  padding: '16px',
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '12px',
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  cursor: authLoading ? 'not-allowed' : 'pointer',
+                  opacity: authLoading ? 0.7 : 1
+                }}
+              >
+                {authLoading ? 'Загрузка...' : (authMode === 'login' ? 'Войти' : 'Зарегистрироваться')}
+              </button>
+            </form>
+
+            <div style={{
+              textAlign: 'center',
+              marginTop: '20px',
+              fontSize: '14px',
+              color: darkMode ? '#999' : '#666'
+            }}>
+              {authMode === 'login' ? (
+                <>
+                  Нет аккаунта?{' '}
+                  <button
+                    onClick={() => {
+                      setAuthMode('register');
+                      setAuthError('');
+                    }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#667eea',
+                      fontWeight: '600',
+                      cursor: 'pointer',
+                      fontSize: '14px'
+                    }}
+                  >
+                    Зарегистрируйтесь
+                  </button>
+                </>
+              ) : (
+                <>
+                  Уже есть аккаунт?{' '}
+                  <button
+                    onClick={() => {
+                      setAuthMode('login');
+                      setAuthError('');
+                    }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#667eea',
+                      fontWeight: '600',
+                      cursor: 'pointer',
+                      fontSize: '14px'
+                    }}
+                  >
+                    Войдите
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showSettings && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.7)',
+          backdropFilter: 'blur(5px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '20px'
+        }} onClick={() => setShowSettings(false)}>
+          <div style={{
+            background: darkMode ? '#2d2d44' : 'white',
+            borderRadius: '24px',
+            width: '100%',
+            maxWidth: '800px',
+            maxHeight: '90vh',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+            boxShadow: '0 25px 70px rgba(0, 0, 0, 0.3)'
+          }} onClick={(e) => e.stopPropagation()}>
+            <div style={{
+              padding: '32px',
+              borderBottom: darkMode ? '1px solid #3a3a4e' : '1px solid #e0e0e0'
+            }}>
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}>
+                <h2 style={{
+                  fontSize: '28px',
+                  fontWeight: '700',
+                  margin: 0,
+                  color: darkMode ? 'white' : '#333'
+                }}>
+                  Настройки
+                </h2>
                 <button
-                  key={tab.id}
-                  onClick={() => setSettingsTab(tab.id as any)}
+                  onClick={() => setShowSettings(false)}
                   style={{
                     background: 'none',
                     border: 'none',
-                    padding: '16px 20px',
+                    fontSize: '28px',
                     cursor: 'pointer',
-                    fontSize: '15px',
-                    fontWeight: '600',
-                    color: settingsTab === tab.id 
-                      ? '#F00000' 
-                      : darkMode ? '#999' : '#666',
-                    borderBottom: settingsTab === tab.id ? '2px solid #F00000' : '2px solid transparent',
-                    transition: 'all 0.2s',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px'
+                    color: darkMode ? '#999' : '#666'
                   }}
                 >
-                  <span>{tab.icon}</span>
-                  {tab.label}
+                  ✕
                 </button>
-              ))}
+              </div>
             </div>
 
-            <div style={{
-              padding: '32px',
-              maxHeight: '400px',
-              overflowY: 'auto'
-            }}>
-              {settingsTab === 'account' && (
-                <div>
-                  {user ? (
-                    <div>
-                      <div style={{
-                        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                        borderRadius: '16px',
-                        padding: '24px',
-                        marginBottom: '24px',
-                        textAlign: 'center'
-                      }}>
-                        <div style={{ fontSize: '48px', marginBottom: '12px' }}>
-                          {user.avatar}
-                        </div>
-                        <h3 style={{
-                          color: 'white',
-                          margin: '0 0 8px 0',
-                          fontSize: '20px',
-                          fontWeight: '600'
-                        }}>
-                          {user.name}
-                        </h3>
-                        <p style={{
-                          color: 'rgba(255, 255, 255, 0.9)',
-                          margin: 0,
-                          fontSize: '14px'
-                        }}>
-                          {user.email}
-                        </p>
-                        <div style={{
-                          marginTop: '12px',
-                          display: 'inline-block',
-                          padding: '6px 16px',
-                          background: 'rgba(255, 255, 255, 0.2)',
-                          borderRadius: '20px',
-                          fontSize: '12px',
-                          color: 'white',
-                          fontWeight: '600'
-                        }}>
-                          {user.provider === 'google' ? 'Google' : user.provider === 'yandex' ? 'Яндекс ID' : 'GitHub'}
-                        </div>
-                      </div>
-                      <button
-                        onClick={handleLogout}
-                        style={{
-                          width: '100%',
-                          padding: '16px',
-                          background: 'linear-gradient(135deg, #F00000 0%, #FF4444 100%)',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '12px',
-                          fontSize: '16px',
-                          fontWeight: '600',
-                          cursor: 'pointer',
-                          transition: 'all 0.2s ease'
-                        }}
-                      >
-                        Выйти из аккаунта
-                      </button>
-                    </div>
-                  ) : (
-                    <div>
-                      <div style={{
-                        background: '#FFF3CD',
-                        border: '1px solid #FFE69C',
-                        borderRadius: '12px',
-                        padding: '12px 16px',
-                        marginBottom: '20px'
-                      }}>
-                        <p style={{
-                          margin: 0,
-                          fontSize: '13px',
-                          color: '#856404',
-                          textAlign: 'center',
-                          fontWeight: '500'
-                        }}>
-                          ⚠️ По техническим причинам вход в аккаунты не работает
-                        </p>
-                      </div>
-                      <p style={{
-                        color: darkMode ? '#ccc' : '#666',
-                        marginBottom: '24px',
-                        fontSize: '15px'
-                      }}>
-                        Войдите в аккаунт, чтобы синхронизировать закладки, историю и настройки между устройствами
-                      </p>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                        {[
-                          { provider: 'google', label: 'Войти через Google', icon: '🔵' },
-                          { provider: 'yandex', label: 'Войти через Яндекс ID', icon: '🔴' },
-                          { provider: 'github', label: 'Войти через GitHub', icon: '⚫' }
-                        ].map(({ provider, label, icon }) => (
-                          <button
-                            key={provider}
-                            onClick={() => handleLogin(provider as any)}
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '12px',
-                              padding: '16px 20px',
-                              background: darkMode ? '#3a3a4e' : 'white',
-                              border: `2px solid ${darkMode ? '#4a4a5e' : '#e0e0e0'}`,
-                              borderRadius: '12px',
-                              fontSize: '16px',
-                              fontWeight: '600',
-                              cursor: 'pointer',
-                              transition: 'all 0.2s ease',
-                              color: darkMode ? 'white' : '#333'
-                            }}
-                          >
-                            <div style={{ fontSize: '24px' }}>{icon}</div>
-                            <span>{label}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
+            <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+              <div style={{
+                width: '240px',
+                borderRight: darkMode ? '1px solid #3a3a4e' : '1px solid #e0e0e0',
+                padding: '24px',
+                overflowY: 'auto'
+              }}>
+                {[
+                  { id: 'account', label: 'Аккаунт', icon: '👤' },
+                  { id: 'appearance', label: 'Внешний вид', icon: '🎨' },
+                  { id: 'bookmarks', label: 'Закладки', icon: '⭐' },
+                  { id: 'history', label: 'История', icon: '📚' },
+                  { id: 'advanced', label: 'Дополнительно', icon: '⚙️' }
+                ].map(tab => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setSettingsTab(tab.id as any)}
+                    style={{
+                      width: '100%',
+                      padding: '14px 16px',
+                      marginBottom: '8px',
+                      background: settingsTab === tab.id
+                        ? (darkMode ? '#3a3a4e' : '#f5f5f5')
+                        : 'transparent',
+                      border: 'none',
+                      borderRadius: '12px',
+                      fontSize: '15px',
+                      fontWeight: '600',
+                      color: darkMode ? 'white' : '#333',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    <span style={{ fontSize: '20px' }}>{tab.icon}</span>
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
 
-              {settingsTab === 'appearance' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <div style={{
+                flex: 1,
+                padding: '32px',
+                overflowY: 'auto'
+              }}>
+                {settingsTab === 'account' && (
                   <div>
                     <h3 style={{
-                      fontSize: '16px',
-                      fontWeight: '600',
-                      marginBottom: '16px',
+                      fontSize: '20px',
+                      fontWeight: '700',
+                      marginBottom: '24px',
                       color: darkMode ? 'white' : '#333'
                     }}>
-                      Тема оформления
+                      Информация об аккаунте
                     </h3>
-                    <div style={{
-                      display: 'flex',
-                      gap: '12px',
-                      padding: '16px',
-                      background: darkMode ? '#3a3a4e' : '#f5f5f5',
-                      borderRadius: '12px',
-                      alignItems: 'center',
-                      justifyContent: 'space-between'
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <span style={{ fontSize: '24px' }}>{darkMode ? '🌙' : '☀️'}</span>
-                        <div>
-                          <div style={{
-                            fontWeight: '600',
-                            marginBottom: '4px',
-                            color: darkMode ? 'white' : '#333'
-                          }}>
-                            {darkMode ? 'Тёмная тема' : 'Светлая тема'}
-                          </div>
-                          <div style={{
-                            fontSize: '13px',
-                            color: darkMode ? '#999' : '#666'
-                          }}>
-                            {darkMode ? 'Приятно для глаз ночью' : 'Классическая тема'}
-                          </div>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => setDarkMode(!darkMode)}
-                        style={{
-                          background: darkMode ? '#667eea' : '#e0e0e0',
-                          width: '52px',
-                          height: '28px',
-                          borderRadius: '14px',
-                          border: 'none',
-                          cursor: 'pointer',
-                          position: 'relative',
-                          transition: 'background 0.3s'
-                        }}
-                      >
+
+                    {user && (
+                      <>
                         <div style={{
-                          width: '24px',
-                          height: '24px',
-                          borderRadius: '50%',
-                          background: 'white',
-                          position: 'absolute',
-                          top: '2px',
-                          left: darkMode ? '26px' : '2px',
-                          transition: 'left 0.3s'
-                        }} />
-                      </button>
-                    </div>
-                  </div>
-
-                  <div>
-                    <h3 style={{
-                      fontSize: '16px',
-                      fontWeight: '600',
-                      marginBottom: '16px',
-                      color: darkMode ? 'white' : '#333'
-                    }}>
-                      Режим приватности
-                    </h3>
-                    <div style={{
-                      display: 'flex',
-                      gap: '12px',
-                      padding: '16px',
-                      background: incognito ? 'rgba(0, 0, 0, 0.3)' : (darkMode ? '#3a3a4e' : '#f5f5f5'),
-                      borderRadius: '12px',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      border: incognito ? '2px solid #666' : 'none'
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <span style={{ fontSize: '24px' }}>🕵️</span>
-                        <div>
+                          background: darkMode ? '#3a3a4e' : '#f5f5f5',
+                          padding: '24px',
+                          borderRadius: '16px',
+                          marginBottom: '24px'
+                        }}>
                           <div style={{
-                            fontWeight: '600',
-                            marginBottom: '4px',
-                            color: darkMode ? 'white' : '#333'
-                          }}>
-                            Режим инкогнито
-                          </div>
-                          <div style={{
-                            fontSize: '13px',
-                            color: darkMode ? '#999' : '#666'
-                          }}>
-                            История не сохраняется
-                          </div>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => setIncognito(!incognito)}
-                        style={{
-                          background: incognito ? '#666' : '#e0e0e0',
-                          width: '52px',
-                          height: '28px',
-                          borderRadius: '14px',
-                          border: 'none',
-                          cursor: 'pointer',
-                          position: 'relative',
-                          transition: 'background 0.3s'
-                        }}
-                      >
-                        <div style={{
-                          width: '24px',
-                          height: '24px',
-                          borderRadius: '50%',
-                          background: 'white',
-                          position: 'absolute',
-                          top: '2px',
-                          left: incognito ? '26px' : '2px',
-                          transition: 'left 0.3s'
-                        }} />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {settingsTab === 'bookmarks' && (
-                <div>
-                  <h3 style={{
-                    fontSize: '16px',
-                    fontWeight: '600',
-                    marginBottom: '16px',
-                    color: darkMode ? 'white' : '#333'
-                  }}>
-                    Добавить закладку
-                  </h3>
-                  <div style={{
-                    background: darkMode ? '#3a3a4e' : '#f5f5f5',
-                    padding: '20px',
-                    borderRadius: '12px',
-                    marginBottom: '24px'
-                  }}>
-                    <div style={{ marginBottom: '12px' }}>
-                      <label style={{
-                        display: 'block',
-                        marginBottom: '8px',
-                        fontSize: '14px',
-                        fontWeight: '600',
-                        color: darkMode ? 'white' : '#333'
-                      }}>
-                        Название
-                      </label>
-                      <input
-                        type="text"
-                        value={newBookmark.name}
-                        onChange={(e) => setNewBookmark({ ...newBookmark, name: e.target.value })}
-                        placeholder="Мой сайт"
-                        style={{
-                          width: '100%',
-                          padding: '10px 12px',
-                          borderRadius: '8px',
-                          border: `1px solid ${darkMode ? '#4a4a5e' : '#ddd'}`,
-                          background: darkMode ? '#2a2a3e' : 'white',
-                          color: darkMode ? 'white' : '#333',
-                          fontSize: '14px',
-                          outline: 'none'
-                        }}
-                      />
-                    </div>
-                    <div style={{ marginBottom: '12px' }}>
-                      <label style={{
-                        display: 'block',
-                        marginBottom: '8px',
-                        fontSize: '14px',
-                        fontWeight: '600',
-                        color: darkMode ? 'white' : '#333'
-                      }}>
-                        URL адрес
-                      </label>
-                      <input
-                        type="url"
-                        value={newBookmark.url}
-                        onChange={(e) => setNewBookmark({ ...newBookmark, url: e.target.value })}
-                        placeholder="https://example.com"
-                        style={{
-                          width: '100%',
-                          padding: '10px 12px',
-                          borderRadius: '8px',
-                          border: `1px solid ${darkMode ? '#4a4a5e' : '#ddd'}`,
-                          background: darkMode ? '#2a2a3e' : 'white',
-                          color: darkMode ? 'white' : '#333',
-                          fontSize: '14px',
-                          outline: 'none'
-                        }}
-                      />
-                    </div>
-                    <div style={{ marginBottom: '16px' }}>
-                      <label style={{
-                        display: 'block',
-                        marginBottom: '8px',
-                        fontSize: '14px',
-                        fontWeight: '600',
-                        color: darkMode ? 'white' : '#333'
-                      }}>
-                        Иконка (эмодзи)
-                      </label>
-                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                        {['⭐', '🔥', '💼', '🎮', '🎵', '📱', '💻', '🎨', '📚', '⚡'].map(emoji => (
-                          <button
-                            key={emoji}
-                            onClick={() => setNewBookmark({ ...newBookmark, icon: emoji })}
-                            style={{
-                              fontSize: '24px',
-                              padding: '8px',
-                              border: newBookmark.icon === emoji ? '2px solid #F00000' : `1px solid ${darkMode ? '#4a4a5e' : '#ddd'}`,
-                              borderRadius: '8px',
-                              background: darkMode ? '#2a2a3e' : 'white',
-                              cursor: 'pointer',
-                              transition: 'all 0.2s'
-                            }}
-                          >
-                            {emoji}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <button
-                      onClick={addBookmark}
-                      style={{
-                        width: '100%',
-                        padding: '12px',
-                        background: 'linear-gradient(135deg, #F00000 0%, #FF4444 100%)',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '8px',
-                        fontSize: '15px',
-                        fontWeight: '600',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      Добавить закладку
-                    </button>
-                  </div>
-
-                  <h3 style={{
-                    fontSize: '16px',
-                    fontWeight: '600',
-                    marginBottom: '16px',
-                    color: darkMode ? 'white' : '#333'
-                  }}>
-                    Мои закладки ({bookmarks.length})
-                  </h3>
-
-                  {bookmarks.length === 0 ? (
-                    <div style={{
-                      textAlign: 'center',
-                      padding: '40px 20px',
-                      color: darkMode ? '#999' : '#666'
-                    }}>
-                      <div style={{ fontSize: '48px', marginBottom: '16px' }}>⭐</div>
-                      <p style={{ margin: 0, fontSize: '15px' }}>Закладок пока нет</p>
-                    </div>
-                  ) : (
-                    <div style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '8px'
-                    }}>
-                      {bookmarks.map((bookmark, index) => (
-                        <div
-                          key={index}
-                          style={{
                             display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            padding: '12px 16px',
-                            background: darkMode ? '#3a3a4e' : '#f5f5f5',
-                            borderRadius: '8px'
-                          }}
-                        >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
-                            <span style={{ fontSize: '24px' }}>{bookmark.icon}</span>
-                            <div style={{ flex: 1 }}>
-                              <div style={{
-                                fontWeight: '600',
-                                marginBottom: '4px',
-                                color: darkMode ? 'white' : '#333',
-                                fontSize: '14px'
-                              }}>
-                                {bookmark.name}
-                              </div>
+                            flexDirection: 'column',
+                            gap: '16px'
+                          }}>
+                            <div>
                               <div style={{
                                 fontSize: '12px',
                                 color: darkMode ? '#999' : '#666',
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap'
+                                marginBottom: '4px',
+                                fontWeight: '600',
+                                textTransform: 'uppercase'
                               }}>
-                                {bookmark.url}
+                                Имя
+                              </div>
+                              <div style={{
+                                fontSize: '16px',
+                                color: darkMode ? 'white' : '#333',
+                                fontWeight: '600'
+                              }}>
+                                {user.display_name || 'Не указано'}
                               </div>
                             </div>
-                          </div>
-                          <div style={{ display: 'flex', gap: '8px' }}>
-                            <a
-                              href={bookmark.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              style={{
-                                padding: '6px 12px',
-                                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                                color: 'white',
-                                border: 'none',
-                                borderRadius: '6px',
+
+                            <div>
+                              <div style={{
                                 fontSize: '12px',
+                                color: darkMode ? '#999' : '#666',
+                                marginBottom: '4px',
                                 fontWeight: '600',
-                                cursor: 'pointer',
-                                textDecoration: 'none'
-                              }}
-                            >
-                              Открыть
-                            </a>
+                                textTransform: 'uppercase'
+                              }}>
+                                NikMail
+                              </div>
+                              <div style={{
+                                fontSize: '16px',
+                                color: '#667eea',
+                                fontWeight: '600'
+                              }}>
+                                {user.nikmail}
+                              </div>
+                            </div>
+
+                            {user.email && (
+                              <div>
+                                <div style={{
+                                  fontSize: '12px',
+                                  color: darkMode ? '#999' : '#666',
+                                  marginBottom: '4px',
+                                  fontWeight: '600',
+                                  textTransform: 'uppercase'
+                                }}>
+                                  Email
+                                </div>
+                                <div style={{
+                                  fontSize: '16px',
+                                  color: darkMode ? 'white' : '#333'
+                                }}>
+                                  {user.email}
+                                </div>
+                              </div>
+                            )}
+
+                            {user.phone && (
+                              <div>
+                                <div style={{
+                                  fontSize: '12px',
+                                  color: darkMode ? '#999' : '#666',
+                                  marginBottom: '4px',
+                                  fontWeight: '600',
+                                  textTransform: 'uppercase'
+                                }}>
+                                  Телефон
+                                </div>
+                                <div style={{
+                                  fontSize: '16px',
+                                  color: darkMode ? 'white' : '#333'
+                                }}>
+                                  {user.phone}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={handleLogout}
+                          style={{
+                            width: '100%',
+                            padding: '14px',
+                            background: 'linear-gradient(135deg, #F00000 0%, #FF4444 100%)',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '12px',
+                            fontSize: '15px',
+                            fontWeight: '600',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Выйти из аккаунта
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {settingsTab === 'appearance' && (
+                  <div>
+                    <h3 style={{
+                      fontSize: '20px',
+                      fontWeight: '700',
+                      marginBottom: '24px',
+                      color: darkMode ? 'white' : '#333'
+                    }}>
+                      Внешний вид
+                    </h3>
+
+                    <div style={{
+                      background: darkMode ? '#3a3a4e' : '#f5f5f5',
+                      padding: '20px',
+                      borderRadius: '12px',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center'
+                    }}>
+                      <div>
+                        <div style={{
+                          fontSize: '16px',
+                          fontWeight: '600',
+                          marginBottom: '4px',
+                          color: darkMode ? 'white' : '#333'
+                        }}>
+                          Тёмная тема
+                        </div>
+                        <div style={{
+                          fontSize: '14px',
+                          color: darkMode ? '#999' : '#666'
+                        }}>
+                          {darkMode ? 'Включена' : 'Выключена'}
+                        </div>
+                      </div>
+                      <label style={{
+                        position: 'relative',
+                        display: 'inline-block',
+                        width: '60px',
+                        height: '34px'
+                      }}>
+                        <input
+                          type="checkbox"
+                          checked={darkMode}
+                          onChange={(e) => setDarkMode(e.target.checked)}
+                          style={{ opacity: 0, width: 0, height: 0 }}
+                        />
+                        <span style={{
+                          position: 'absolute',
+                          cursor: 'pointer',
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          background: darkMode ? '#667eea' : '#ccc',
+                          transition: '0.4s',
+                          borderRadius: '34px'
+                        }}>
+                          <span style={{
+                            position: 'absolute',
+                            content: '""',
+                            height: '26px',
+                            width: '26px',
+                            left: darkMode ? '30px' : '4px',
+                            bottom: '4px',
+                            background: 'white',
+                            transition: '0.4s',
+                            borderRadius: '50%'
+                          }} />
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+                )}
+
+                {settingsTab === 'bookmarks' && (
+                  <div>
+                    <h3 style={{
+                      fontSize: '20px',
+                      fontWeight: '700',
+                      marginBottom: '24px',
+                      color: darkMode ? 'white' : '#333'
+                    }}>
+                      Закладки
+                    </h3>
+
+                    <div style={{
+                      background: darkMode ? '#3a3a4e' : '#f5f5f5',
+                      padding: '20px',
+                      borderRadius: '12px',
+                      marginBottom: '24px'
+                    }}>
+                      <h4 style={{
+                        fontSize: '16px',
+                        fontWeight: '600',
+                        marginBottom: '16px',
+                        color: darkMode ? 'white' : '#333'
+                      }}>
+                        Добавить закладку
+                      </h4>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        <input
+                          type="text"
+                          placeholder="Название"
+                          value={newBookmark.name}
+                          onChange={(e) => setNewBookmark({ ...newBookmark, name: e.target.value })}
+                          style={{
+                            padding: '12px',
+                            fontSize: '14px',
+                            border: 'none',
+                            borderRadius: '8px',
+                            background: darkMode ? '#2d2d44' : 'white',
+                            color: darkMode ? 'white' : '#333',
+                            outline: 'none'
+                          }}
+                        />
+                        <input
+                          type="url"
+                          placeholder="URL (https://...)"
+                          value={newBookmark.url}
+                          onChange={(e) => setNewBookmark({ ...newBookmark, url: e.target.value })}
+                          style={{
+                            padding: '12px',
+                            fontSize: '14px',
+                            border: 'none',
+                            borderRadius: '8px',
+                            background: darkMode ? '#2d2d44' : 'white',
+                            color: darkMode ? 'white' : '#333',
+                            outline: 'none'
+                          }}
+                        />
+                        <input
+                          type="text"
+                          placeholder="Иконка (emoji)"
+                          value={newBookmark.icon}
+                          onChange={(e) => setNewBookmark({ ...newBookmark, icon: e.target.value })}
+                          maxLength={2}
+                          style={{
+                            padding: '12px',
+                            fontSize: '14px',
+                            border: 'none',
+                            borderRadius: '8px',
+                            background: darkMode ? '#2d2d44' : 'white',
+                            color: darkMode ? 'white' : '#333',
+                            outline: 'none'
+                          }}
+                        />
+                        <button
+                          onClick={addBookmark}
+                          style={{
+                            padding: '12px',
+                            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '8px',
+                            fontSize: '14px',
+                            fontWeight: '600',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Добавить закладку
+                        </button>
+                      </div>
+                    </div>
+
+                    <h4 style={{
+                      fontSize: '16px',
+                      fontWeight: '600',
+                      marginBottom: '16px',
+                      color: darkMode ? 'white' : '#333'
+                    }}>
+                      Мои закладки ({bookmarks.length})
+                    </h4>
+
+                    {bookmarks.length === 0 ? (
+                      <div style={{
+                        textAlign: 'center',
+                        padding: '40px 20px',
+                        color: darkMode ? '#999' : '#666'
+                      }}>
+                        <div style={{ fontSize: '48px', marginBottom: '16px' }}>⭐</div>
+                        <p style={{ margin: 0, fontSize: '15px' }}>Закладок пока нет</p>
+                      </div>
+                    ) : (
+                      <div style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '8px'
+                      }}>
+                        {bookmarks.map((bookmark, index) => (
+                          <div
+                            key={index}
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              padding: '12px 16px',
+                              background: darkMode ? '#3a3a4e' : '#f5f5f5',
+                              borderRadius: '8px'
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
+                              <span style={{ fontSize: '24px' }}>{bookmark.icon}</span>
+                              <div style={{ flex: 1 }}>
+                                <div style={{
+                                  fontWeight: '600',
+                                  marginBottom: '4px',
+                                  color: darkMode ? 'white' : '#333',
+                                  fontSize: '15px'
+                                }}>
+                                  {bookmark.name}
+                                </div>
+                                <div style={{
+                                  fontSize: '13px',
+                                  color: darkMode ? '#999' : '#666',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap'
+                                }}>
+                                  {bookmark.url}
+                                </div>
+                              </div>
+                            </div>
                             <button
                               onClick={() => removeBookmark(index)}
                               style={{
                                 background: 'none',
                                 border: 'none',
-                                color: '#F00000',
+                                color: '#ff4444',
                                 cursor: 'pointer',
                                 fontSize: '18px',
                                 padding: '4px'
@@ -795,59 +1439,131 @@ const Index = () => {
                               ✕
                             </button>
                           </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
 
-              {settingsTab === 'advanced' && (
-                <div>
-                  <h3 style={{
-                    fontSize: '16px',
-                    fontWeight: '600',
-                    marginBottom: '16px',
-                    color: darkMode ? 'white' : '#333'
-                  }}>
-                    Импорт и экспорт
-                  </h3>
-
-                  <div style={{
-                    background: darkMode ? '#3a3a4e' : '#f5f5f5',
-                    padding: '20px',
-                    borderRadius: '12px',
-                    marginBottom: '24px'
-                  }}>
-                    <div style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '12px',
-                      marginBottom: '16px'
+                {settingsTab === 'history' && (
+                  <div>
+                    <h3 style={{
+                      fontSize: '20px',
+                      fontWeight: '700',
+                      marginBottom: '24px',
+                      color: darkMode ? 'white' : '#333'
                     }}>
-                      <span style={{ fontSize: '32px' }}>📦</span>
-                      <div>
+                      История поиска
+                    </h3>
+
+                    {!user ? (
+                      <div style={{
+                        textAlign: 'center',
+                        padding: '40px 20px',
+                        color: darkMode ? '#999' : '#666'
+                      }}>
+                        <div style={{ fontSize: '64px', marginBottom: '16px' }}>🔒</div>
+                        <p style={{ margin: '0 0 16px 0', fontSize: '16px' }}>
+                          Войдите, чтобы история сохранялась на сервере
+                        </p>
+                      </div>
+                    ) : (
+                      <>
+                        <button
+                          onClick={clearHistory}
+                          style={{
+                            width: '100%',
+                            padding: '14px',
+                            background: darkMode ? '#3a3a4e' : '#f5f5f5',
+                            border: 'none',
+                            borderRadius: '12px',
+                            fontSize: '14px',
+                            fontWeight: '600',
+                            color: '#ff4444',
+                            cursor: 'pointer',
+                            marginBottom: '16px'
+                          }}
+                        >
+                          Очистить всю историю
+                        </button>
+
                         <div style={{
-                          fontWeight: '600',
-                          marginBottom: '4px',
-                          color: darkMode ? 'white' : '#333',
-                          fontSize: '15px'
+                          fontSize: '14px',
+                          color: darkMode ? '#999' : '#666',
+                          marginBottom: '16px'
                         }}>
-                          Резервное копирование
+                          Всего записей: {searchHistory.length}
                         </div>
-                        <div style={{
-                          fontSize: '13px',
-                          color: darkMode ? '#999' : '#666'
-                        }}>
-                          Сохраните закладки, историю и настройки
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {settingsTab === 'advanced' && (
+                  <div>
+                    <h3 style={{
+                      fontSize: '20px',
+                      fontWeight: '700',
+                      marginBottom: '24px',
+                      color: darkMode ? 'white' : '#333'
+                    }}>
+                      Импорт и экспорт
+                    </h3>
+
+                    <div style={{
+                      background: darkMode ? '#3a3a4e' : '#f5f5f5',
+                      padding: '20px',
+                      borderRadius: '12px',
+                      marginBottom: '24px'
+                    }}>
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                        marginBottom: '16px'
+                      }}>
+                        <span style={{ fontSize: '32px' }}>📦</span>
+                        <div>
+                          <div style={{
+                            fontWeight: '600',
+                            marginBottom: '4px',
+                            color: darkMode ? 'white' : '#333',
+                            fontSize: '15px'
+                          }}>
+                            Резервное копирование
+                          </div>
+                          <div style={{
+                            fontSize: '13px',
+                            color: darkMode ? '#999' : '#666'
+                          }}>
+                            Сохраните закладки и настройки
+                          </div>
                         </div>
                       </div>
-                    </div>
-                    
-                    <div style={{ display: 'flex', gap: '12px' }}>
-                      <button
-                        onClick={exportSettings}
-                        style={{
+                      
+                      <div style={{ display: 'flex', gap: '12px' }}>
+                        <button
+                          onClick={exportSettings}
+                          style={{
+                            flex: 1,
+                            padding: '12px',
+                            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '8px',
+                            fontSize: '14px',
+                            fontWeight: '600',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '8px'
+                          }}
+                        >
+                          <span>📥</span> Экспорт настроек
+                        </button>
+                        
+                        <label style={{
                           flex: 1,
                           padding: '12px',
                           background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
@@ -861,453 +1577,125 @@ const Index = () => {
                           alignItems: 'center',
                           justifyContent: 'center',
                           gap: '8px'
-                        }}
-                      >
-                        <span>📥</span> Экспорт настроек
-                      </button>
-                      
-                      <label style={{
-                        flex: 1,
-                        padding: '12px',
-                        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '8px',
-                        fontSize: '14px',
-                        fontWeight: '600',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '8px'
-                      }}>
-                        <span>📤</span> Импорт настроек
-                        <input
-                          type="file"
-                          accept=".json"
-                          onChange={importSettings}
-                          style={{ display: 'none' }}
-                        />
-                      </label>
-                    </div>
-                  </div>
-
-                  <h3 style={{
-                    fontSize: '16px',
-                    fontWeight: '600',
-                    marginBottom: '16px',
-                    color: darkMode ? 'white' : '#333'
-                  }}>
-                    О браузере
-                  </h3>
-
-                  <div style={{
-                    background: darkMode ? '#3a3a4e' : '#f5f5f5',
-                    padding: '20px',
-                    borderRadius: '12px',
-                    marginBottom: '24px'
-                  }}>
-                    <div style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '12px',
-                      color: darkMode ? '#ccc' : '#666',
-                      fontSize: '14px'
-                    }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span>Версия:</span>
-                        <strong style={{ color: darkMode ? 'white' : '#333' }}>1.0.0</strong>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span>Закладок:</span>
-                        <strong style={{ color: darkMode ? 'white' : '#333' }}>{bookmarks.length}</strong>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span>История:</span>
-                        <strong style={{ color: darkMode ? 'white' : '#333' }}>{incognito ? 'Инкогнито' : `${searchHistory.length} записей`}</strong>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span>Тема:</span>
-                        <strong style={{ color: darkMode ? 'white' : '#333' }}>{darkMode ? 'Тёмная' : 'Светлая'}</strong>
-                      </div>
-                    </div>
-                  </div>
-
-                  <h3 style={{
-                    fontSize: '16px',
-                    fontWeight: '600',
-                    marginBottom: '16px',
-                    color: darkMode ? 'white' : '#333'
-                  }}>
-                    Опасная зона
-                  </h3>
-
-                  <div style={{
-                    background: darkMode ? 'rgba(240, 0, 0, 0.1)' : '#FFF3F3',
-                    border: '1px solid #FFCCCC',
-                    padding: '20px',
-                    borderRadius: '12px'
-                  }}>
-                    <div style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '12px',
-                      marginBottom: '16px'
-                    }}>
-                      <span style={{ fontSize: '32px' }}>⚠️</span>
-                      <div>
-                        <div style={{
-                          fontWeight: '600',
-                          marginBottom: '4px',
-                          color: '#D32F2F',
-                          fontSize: '15px'
                         }}>
-                          Сброс всех настроек
-                        </div>
-                        <div style={{
-                          fontSize: '13px',
-                          color: darkMode ? '#999' : '#666'
-                        }}>
-                          Удалит все данные, закладки и историю
-                        </div>
+                          <span>📤</span> Импорт настроек
+                          <input
+                            type="file"
+                            accept=".json"
+                            onChange={importSettings}
+                            style={{ display: 'none' }}
+                          />
+                        </label>
                       </div>
                     </div>
-                    
-                    <button
-                      onClick={resetAllSettings}
-                      style={{
-                        width: '100%',
-                        padding: '12px',
-                        background: 'linear-gradient(135deg, #F00000 0%, #FF4444 100%)',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '8px',
-                        fontSize: '14px',
-                        fontWeight: '600',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      Сбросить все настройки
-                    </button>
-                  </div>
-                </div>
-              )}
 
-              {settingsTab === 'history' && (
-                <div>
-                  <div style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    marginBottom: '20px'
-                  }}>
                     <h3 style={{
-                      fontSize: '16px',
-                      fontWeight: '600',
-                      margin: 0,
+                      fontSize: '20px',
+                      fontWeight: '700',
+                      marginBottom: '24px',
                       color: darkMode ? 'white' : '#333'
                     }}>
-                      История поиска
+                      О браузере
                     </h3>
-                    {searchHistory.length > 0 && (
+
+                    <div style={{
+                      background: darkMode ? '#3a3a4e' : '#f5f5f5',
+                      padding: '20px',
+                      borderRadius: '12px',
+                      marginBottom: '24px'
+                    }}>
+                      <div style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '12px',
+                        color: darkMode ? '#ccc' : '#666',
+                        fontSize: '14px'
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span>Версия:</span>
+                          <strong style={{ color: darkMode ? 'white' : '#333' }}>2.0.0</strong>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span>Закладок:</span>
+                          <strong style={{ color: darkMode ? 'white' : '#333' }}>{bookmarks.length}</strong>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span>История:</span>
+                          <strong style={{ color: darkMode ? 'white' : '#333' }}>
+                            {incognito ? 'Инкогнито' : user ? `${searchHistory.length} записей` : 'Войдите для просмотра'}
+                          </strong>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span>Тема:</span>
+                          <strong style={{ color: darkMode ? 'white' : '#333' }}>{darkMode ? 'Тёмная' : 'Светлая'}</strong>
+                        </div>
+                      </div>
+                    </div>
+
+                    <h3 style={{
+                      fontSize: '20px',
+                      fontWeight: '700',
+                      marginBottom: '24px',
+                      color: darkMode ? 'white' : '#333'
+                    }}>
+                      Опасная зона
+                    </h3>
+
+                    <div style={{
+                      background: darkMode ? 'rgba(240, 0, 0, 0.1)' : '#FFF3F3',
+                      border: '1px solid #FFCCCC',
+                      padding: '20px',
+                      borderRadius: '12px'
+                    }}>
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                        marginBottom: '16px'
+                      }}>
+                        <span style={{ fontSize: '32px' }}>⚠️</span>
+                        <div>
+                          <div style={{
+                            fontWeight: '600',
+                            marginBottom: '4px',
+                            color: '#D32F2F',
+                            fontSize: '15px'
+                          }}>
+                            Сброс всех настроек
+                          </div>
+                          <div style={{
+                            fontSize: '13px',
+                            color: darkMode ? '#999' : '#666'
+                          }}>
+                            Удалит все данные, закладки и выход из аккаунта
+                          </div>
+                        </div>
+                      </div>
+                      
                       <button
-                        onClick={clearHistory}
+                        onClick={resetAllSettings}
                         style={{
+                          width: '100%',
+                          padding: '12px',
                           background: 'linear-gradient(135deg, #F00000 0%, #FF4444 100%)',
                           color: 'white',
                           border: 'none',
-                          padding: '8px 16px',
                           borderRadius: '8px',
-                          fontSize: '13px',
+                          fontSize: '14px',
                           fontWeight: '600',
                           cursor: 'pointer'
                         }}
                       >
-                        Очистить всё
+                        Сбросить все настройки
                       </button>
-                    )}
+                    </div>
                   </div>
-
-                  {incognito ? (
-                    <div style={{
-                      textAlign: 'center',
-                      padding: '40px 20px',
-                      color: darkMode ? '#999' : '#666'
-                    }}>
-                      <div style={{ fontSize: '48px', marginBottom: '16px' }}>🕵️</div>
-                      <p style={{ margin: 0, fontSize: '15px' }}>
-                        Режим инкогнито активен.<br />История не сохраняется.
-                      </p>
-                    </div>
-                  ) : searchHistory.length === 0 ? (
-                    <div style={{
-                      textAlign: 'center',
-                      padding: '40px 20px',
-                      color: darkMode ? '#999' : '#666'
-                    }}>
-                      <div style={{ fontSize: '48px', marginBottom: '16px' }}>📭</div>
-                      <p style={{ margin: 0, fontSize: '15px' }}>История поиска пуста</p>
-                    </div>
-                  ) : (
-                    <div style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '8px'
-                    }}>
-                      {searchHistory.map((item, index) => (
-                        <div
-                          key={index}
-                          style={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            padding: '12px 16px',
-                            background: darkMode ? '#3a3a4e' : '#f5f5f5',
-                            borderRadius: '8px',
-                            fontSize: '14px',
-                            color: darkMode ? 'white' : '#333'
-                          }}
-                        >
-                          <span style={{ flex: 1 }}>🔍 {item}</span>
-                          <button
-                            onClick={() => removeHistoryItem(item)}
-                            style={{
-                              background: 'none',
-                              border: 'none',
-                              color: '#F00000',
-                              cursor: 'pointer',
-                              fontSize: '18px',
-                              padding: '4px'
-                            }}
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </>
-      )}
-
-      <div style={{
-        width: '100%',
-        maxWidth: '680px',
-        textAlign: 'center'
-      }}>
-        <div style={{
-          marginBottom: '48px',
-          animation: 'fadeIn 0.6s ease-in'
-        }}>
-          <div style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '12px',
-            marginBottom: '16px'
-          }}>
-            <div style={{
-              width: '56px',
-              height: '56px',
-              background: incognito 
-                ? 'linear-gradient(135deg, #666 0%, #333 100%)'
-                : 'linear-gradient(135deg, #F00000 0%, #FF4444 100%)',
-              borderRadius: '16px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '28px',
-              boxShadow: '0 8px 24px rgba(240, 0, 0, 0.3)'
-            }}>
-              {incognito ? '🕵️' : '🌐'}
-            </div>
-            <h1 style={{
-              fontSize: '48px',
-              fontWeight: '700',
-              color: textColor,
-              margin: 0,
-              letterSpacing: '-0.5px'
-            }}>
-              Nikbrowser
-            </h1>
-          </div>
-          <p style={{
-            color: 'rgba(255, 255, 255, 0.9)',
-            fontSize: '18px',
-            margin: 0
-          }}>
-            {incognito ? 'Режим инкогнито - история не сохраняется' : 'Быстрый и удобный поиск в интернете'}
-          </p>
-        </div>
-
-        <form onSubmit={handleSubmit} style={{ marginBottom: '40px' }}>
-          <div style={{
-            position: 'relative',
-            width: '100%'
-          }}>
-            <div style={{
-              background: cardBg,
-              borderRadius: '28px',
-              boxShadow: isFocused 
-                ? '0 12px 48px rgba(0, 0, 0, 0.2), 0 0 0 4px rgba(240, 0, 0, 0.2)' 
-                : '0 8px 32px rgba(0, 0, 0, 0.15)',
-              transition: 'all 0.3s ease',
-              overflow: 'hidden'
-            }}>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                padding: '4px 8px'
-              }}>
-                <div style={{
-                  fontSize: '24px',
-                  padding: '0 12px',
-                  opacity: 0.6
-                }}>
-                  🔍
-                </div>
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onFocus={() => setIsFocused(true)}
-                  onBlur={() => setIsFocused(false)}
-                  placeholder="Что будем искать?"
-                  required
-                  style={{
-                    flex: 1,
-                    border: 'none',
-                    outline: 'none',
-                    padding: '16px 8px',
-                    fontSize: '18px',
-                    fontFamily: 'inherit',
-                    background: 'transparent',
-                    color: cardTextColor
-                  }}
-                />
-                <button
-                  type="submit"
-                  style={{
-                    background: 'linear-gradient(135deg, #F00000 0%, #FF4444 100%)',
-                    color: 'white',
-                    border: 'none',
-                    padding: '12px 32px',
-                    borderRadius: '22px',
-                    fontSize: '16px',
-                    fontWeight: '600',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease',
-                    margin: '4px'
-                  }}
-                >
-                  Найти
-                </button>
+                )}
               </div>
             </div>
           </div>
-        </form>
-
-        <div>
-          <h3 style={{
-            color: textColor,
-            fontSize: '16px',
-            fontWeight: '600',
-            marginBottom: '20px',
-            opacity: 0.95
-          }}>
-            Популярные сервисы
-          </h3>
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-            gap: '16px'
-          }}>
-            {quickLinks.map((link) => (
-              <a
-                key={link.name}
-                href={link.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                  background: cardBg,
-                  padding: '20px',
-                  borderRadius: '16px',
-                  textDecoration: 'none',
-                  color: cardTextColor,
-                  transition: 'all 0.3s ease',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: '8px',
-                  boxShadow: '0 4px 16px rgba(0, 0, 0, 0.1)'
-                }}
-              >
-                <div style={{
-                  fontSize: '32px',
-                  marginBottom: '4px'
-                }}>
-                  {link.icon}
-                </div>
-                <span style={{
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  color: link.color
-                }}>
-                  {link.name}
-                </span>
-              </a>
-            ))}
-          </div>
         </div>
-
-        {user && (
-          <div style={{
-            marginTop: '32px',
-            padding: '16px',
-            background: 'rgba(255, 255, 255, 0.15)',
-            borderRadius: '16px',
-            color: 'white',
-            fontSize: '14px'
-          }}>
-            Вы вошли как <strong>{user.name}</strong>
-          </div>
-        )}
-
-        <div style={{
-          marginTop: '48px',
-          color: 'rgba(255, 255, 255, 0.7)',
-          fontSize: '14px'
-        }}>
-          Поиск работает через Google
-        </div>
-      </div>
-
-      <style>
-        {`
-          @keyframes fadeIn {
-            from {
-              opacity: 0;
-              transform: translateY(-20px);
-            }
-            to {
-              opacity: 1;
-              transform: translateY(0);
-            }
-          }
-          @keyframes slideIn {
-            from {
-              opacity: 0;
-              transform: translate(-50%, -45%);
-            }
-            to {
-              opacity: 1;
-              transform: translate(-50%, -50%);
-            }
-          }
-        `}
-      </style>
+      )}
     </div>
   );
 };
