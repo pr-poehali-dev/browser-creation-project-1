@@ -15,7 +15,9 @@ def get_db_connection():
     dsn = os.environ.get('DATABASE_URL')
     if not dsn:
         raise ValueError('DATABASE_URL not found')
-    return psycopg2.connect(dsn, cursor_factory=RealDictCursor)
+    conn = psycopg2.connect(dsn, cursor_factory=RealDictCursor)
+    conn.set_session(autocommit=False)
+    return conn
 
 def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     method: str = event.get('httpMethod', 'GET')
