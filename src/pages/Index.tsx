@@ -587,9 +587,7 @@ const Index = () => {
               cursor: 'pointer',
               transition: 'all 0.2s ease'
             }}
-          >
-            Искать
-          </button>
+          >Поиск</button>
         </div>
       </form>
 
